@@ -1,1 +1,0 @@
-{"code":"INTERNAL_ERROR","message":"학회 목록을 불러오지 못했습니다.","trace_id":"2099d05391fe"}
