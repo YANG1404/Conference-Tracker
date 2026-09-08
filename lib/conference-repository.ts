@@ -254,6 +254,45 @@ const demoMilestoneRows = [
   ],
 ] as const;
 
+const acmCcsTopLevelFields = [
+  ['10002944', '일반 및 참조', 'General and reference'],
+  ['10010520', '하드웨어', 'Hardware'],
+  ['10010583', '컴퓨터 시스템 구성', 'Computer systems organization'],
+  ['10003033', '네트워크', 'Networks'],
+  ['10011007', '소프트웨어 및 소프트웨어 공학', 'Software and its engineering'],
+  ['10003752', '계산 이론', 'Theory of computation'],
+  ['10002950', '컴퓨팅 수학', 'Mathematics of computing'],
+  ['10002951', '정보 시스템', 'Information systems'],
+  ['10002978', '보안 및 개인정보 보호', 'Security and privacy'],
+  ['10003120', '인간 중심 컴퓨팅', 'Human-centered computing'],
+  ['10010147', '컴퓨팅 방법론', 'Computing methodologies'],
+  ['10010405', '응용 컴퓨팅', 'Applied computing'],
+  ['10003456', '사회 및 전문 주제', 'Social and professional topics'],
+] as const;
+
+async function syncAcmCcsFields() {
+  const row = await db()
+    .prepare(
+      'SELECT COUNT(*) AS count FROM research_fields WHERE depth = 0 AND is_active = 1',
+    )
+    .first<{ count: number }>();
+  if ((row?.count ?? 0) >= acmCcsTopLevelFields.length) return;
+  const statements = acmCcsTopLevelFields.map((field) =>
+    db()
+      .prepare(`
+        INSERT INTO research_fields (acm_ccs_code, name_ko, name_en, depth, is_active)
+        VALUES (?, ?, ?, 0, 1)
+        ON CONFLICT(acm_ccs_code) DO UPDATE SET
+          name_ko = excluded.name_ko,
+          name_en = excluded.name_en,
+          depth = 0,
+          is_active = 1
+      `)
+      .bind(...field),
+  );
+  await db().batch(statements);
+}
+
 async function syncDemoMilestones() {
   const demo = await db()
     .prepare("SELECT id FROM conferences WHERE id = 1 AND acronym = 'CHI 2027'")
@@ -290,7 +329,7 @@ export async function ensureDemoData() {
     .prepare('SELECT COUNT(*) AS count FROM conferences')
     .first<{ count: number }>();
   if ((count?.count ?? 0) > 0) {
-    await syncDemoMilestones();
+    await Promise.all([syncDemoMilestones(), syncAcmCcsFields()]);
     return;
   }
 
@@ -506,6 +545,7 @@ export async function ensureDemoData() {
       ),
   );
   await db().batch(statements);
+  await syncAcmCcsFields();
 }
 
 export async function ensureUser(user: AuthenticatedUser) {

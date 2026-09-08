@@ -7,6 +7,7 @@ import {
   Bookmark,
   BookmarkCheck,
   CalendarDays,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock3,
@@ -24,11 +25,19 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import {
   NativeSelect,
   NativeSelectOption,
 } from '@/components/ui/native-select';
+import {
+  Popover,
+  PopoverContent,
+  PopoverHeader,
+  PopoverTitle,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import {
   Sheet,
   SheetContent,
@@ -120,7 +129,7 @@ const demoConferences: Conference[] = [
     id: 1,
     acronym: 'CHI 2027',
     name: 'ACM Conference on Human Factors in Computing Systems',
-    category: 'HCI',
+    category: '인간 중심 컴퓨팅',
     region: '해외',
     format: '오프라인',
     location: 'Barcelona, Spain',
@@ -137,7 +146,7 @@ const demoConferences: Conference[] = [
       2,
       'KSC 2026',
       '한국소프트웨어종합학술대회',
-      '소프트웨어',
+      '소프트웨어 및 소프트웨어 공학',
       '국내',
       '오프라인',
       'Jeju, KR',
@@ -151,7 +160,7 @@ const demoConferences: Conference[] = [
       3,
       'AAAI 2027',
       'AAAI Conference on Artificial Intelligence',
-      '인공지능',
+      '컴퓨팅 방법론',
       '해외',
       '하이브리드',
       'Vancouver, CA',
@@ -165,7 +174,7 @@ const demoConferences: Conference[] = [
       4,
       'ICSE 2027',
       'International Conference on Software Engineering',
-      '소프트웨어',
+      '소프트웨어 및 소프트웨어 공학',
       '국내',
       '오프라인',
       'Seoul, KR',
@@ -179,7 +188,7 @@ const demoConferences: Conference[] = [
       5,
       'NeurIPS 2026',
       'Conference on Neural Information Processing Systems',
-      '머신러닝',
+      '컴퓨팅 방법론',
       '해외',
       '하이브리드',
       'San Diego, US',
@@ -193,7 +202,7 @@ const demoConferences: Conference[] = [
       6,
       'UIST 2026',
       'ACM Symposium on User Interface Software and Technology',
-      'HCI',
+      '인간 중심 컴퓨팅',
       '국내',
       '오프라인',
       'Busan, KR',
@@ -231,7 +240,21 @@ const demoConferences: Conference[] = [
 
 const weekDays = ['일', '월', '화', '수', '목', '금', '토'];
 const calendarDays = Array.from({ length: 35 }, (_, index) => index - 1);
-const categories = ['전체 분야', '인공지능', '머신러닝', 'HCI', '소프트웨어'];
+const categories = [
+  '일반 및 참조',
+  '하드웨어',
+  '컴퓨터 시스템 구성',
+  '네트워크',
+  '소프트웨어 및 소프트웨어 공학',
+  '계산 이론',
+  '컴퓨팅 수학',
+  '정보 시스템',
+  '보안 및 개인정보 보호',
+  '인간 중심 컴퓨팅',
+  '컴퓨팅 방법론',
+  '응용 컴퓨팅',
+  '사회 및 전문 주제',
+];
 
 function dayOffset(eventAt: string) {
   const eventDate = eventAt.slice(0, 10);
@@ -318,7 +341,7 @@ export function ConferenceWorkspace({ userName }: { userName: string | null }) {
   const [conferenceItems, setConferenceItems] =
     useState<Conference[]>(demoConferences);
   const [query, setQuery] = useState('');
-  const [category, setCategory] = useState('전체 분야');
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [region, setRegion] = useState('전체 지역');
   const [format, setFormat] = useState('전체 방식');
   const [pinnedOnly, setPinnedOnly] = useState(false);
@@ -328,6 +351,12 @@ export function ConferenceWorkspace({ userName }: { userName: string | null }) {
   );
   const [view, setView] = useState<'calendar' | 'list'>('calendar');
   const [mobileFilters, setMobileFilters] = useState(false);
+  const currentCalendarDay = Number(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Seoul',
+      day: '2-digit',
+    }).format(new Date()),
+  );
 
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -337,7 +366,8 @@ export function ConferenceWorkspace({ userName }: { userName: string | null }) {
         conference.acronym.toLowerCase().includes(normalized) ||
         conference.name.toLowerCase().includes(normalized);
       const matchesCategory =
-        category === '전체 분야' || conference.category === category;
+        selectedCategories.length === 0 ||
+        selectedCategories.includes(conference.category);
       const matchesRegion =
         region === '전체 지역' || conference.region === region;
       const matchesFormat =
@@ -351,7 +381,15 @@ export function ConferenceWorkspace({ userName }: { userName: string | null }) {
         matchesPinned
       );
     });
-  }, [query, category, region, format, pinnedOnly, pinnedIds, conferenceItems]);
+  }, [
+    query,
+    selectedCategories,
+    region,
+    format,
+    pinnedOnly,
+    pinnedIds,
+    conferenceItems,
+  ]);
 
   const calendarEvents = useMemo(
     () =>
@@ -391,14 +429,8 @@ export function ConferenceWorkspace({ userName }: { userName: string | null }) {
         const tones: Conference['tone'][] = ['green', 'mint', 'gold'];
         setConferenceItems(
           data.items.map((item, index) => {
-            const fieldName = item.research_fields?.[0]?.name_ko ?? '컴퓨팅';
-            const categoryName = fieldName.includes('인간')
-              ? 'HCI'
-              : fieldName.includes('소프트웨어')
-                ? '소프트웨어'
-                : item.acronym?.includes('AAAI')
-                  ? '인공지능'
-                  : '머신러닝';
+            const categoryName =
+              item.research_fields?.[0]?.name_ko ?? '일반 및 참조';
             return {
               id: item.id,
               acronym: item.acronym ?? item.name,
@@ -522,10 +554,18 @@ export function ConferenceWorkspace({ userName }: { userName: string | null }) {
 
   const resetFilters = () => {
     setQuery('');
-    setCategory('전체 분야');
+    setSelectedCategories([]);
     setRegion('전체 지역');
     setFormat('전체 방식');
     setPinnedOnly(false);
+  };
+
+  const toggleCategory = (category: string, checked: boolean) => {
+    setSelectedCategories((current) =>
+      checked
+        ? [...new Set([...current, category])]
+        : current.filter((item) => item !== category),
+    );
   };
 
   return (
@@ -704,18 +744,83 @@ export function ConferenceWorkspace({ userName }: { userName: string | null }) {
                 <div
                   className={`${mobileFilters ? 'flex' : 'hidden'} w-full flex-wrap gap-2 sm:flex sm:w-auto`}
                 >
-                  <NativeSelect
-                    className="w-full sm:w-auto"
-                    value={category}
-                    onChange={(event) => setCategory(event.target.value)}
-                    aria-label="연구 분야"
-                  >
-                    {categories.map((item) => (
-                      <NativeSelectOption key={item} value={item}>
-                        {item}
-                      </NativeSelectOption>
-                    ))}
-                  </NativeSelect>
+                  <Popover>
+                    <PopoverTrigger
+                      render={
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-8 w-full justify-between border-[#2F6B3F]/15 bg-white text-[#405047] sm:w-52"
+                          aria-label="ACM CCS 연구 분야 선택"
+                        />
+                      }
+                    >
+                      <span className="truncate">
+                        {selectedCategories.length === 0
+                          ? '전체 분야'
+                          : selectedCategories.length === 1
+                            ? selectedCategories[0]
+                            : `${selectedCategories.length}개 분야 선택`}
+                      </span>
+                      <ChevronDown className="size-3.5 shrink-0" />
+                    </PopoverTrigger>
+                    <PopoverContent
+                      align="start"
+                      className="w-[min(22rem,calc(100vw-2rem))] gap-0 overflow-hidden border-[#2F6B3F]/12 bg-[#FFFDF7] p-0"
+                    >
+                      <PopoverHeader className="border-b border-[#2F6B3F]/10 px-4 py-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <PopoverTitle className="font-black text-[#294432]">
+                              ACM CCS 연구 분야
+                            </PopoverTitle>
+                            <p className="mt-0.5 text-xs text-[#748078]">
+                              여러 분야를 선택하면 하나라도 일치하는 학회를
+                              표시합니다.
+                            </p>
+                          </div>
+                          {selectedCategories.length > 0 && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="shrink-0 text-[#2F6B3F]"
+                              onClick={() => setSelectedCategories([])}
+                            >
+                              전체 해제
+                            </Button>
+                          )}
+                        </div>
+                      </PopoverHeader>
+                      <div className="max-h-80 overflow-y-auto p-2">
+                        {categories.map((item, index) => {
+                          const checked = selectedCategories.includes(item);
+                          return (
+                            <label
+                              key={item}
+                              htmlFor={`acm-ccs-${index}`}
+                              className="flex cursor-pointer items-center gap-3 rounded-lg px-2.5 py-2.5 text-sm text-[#405047] transition hover:bg-[#7FB77E]/12"
+                            >
+                              <Checkbox
+                                id={`acm-ccs-${index}`}
+                                checked={checked}
+                                onCheckedChange={(value) =>
+                                  toggleCategory(item, value)
+                                }
+                                className="border-[#7FB77E] data-checked:border-[#2F6B3F] data-checked:bg-[#2F6B3F]"
+                              />
+                              <span className="leading-5">{item}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                      <div className="border-t border-[#2F6B3F]/10 bg-[#FFF9DA] px-4 py-2 text-xs text-[#68746B]">
+                        {selectedCategories.length === 0
+                          ? '모든 분야가 표시됩니다.'
+                          : `${selectedCategories.length}개 분야를 OR 조건으로 적용 중입니다.`}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
                   <NativeSelect
                     className="w-full sm:w-auto"
                     value={region}
@@ -760,7 +865,7 @@ export function ConferenceWorkspace({ userName }: { userName: string | null }) {
                   개 학회
                 </span>
                 {(query ||
-                  category !== '전체 분야' ||
+                  selectedCategories.length > 0 ||
                   region !== '전체 지역' ||
                   format !== '전체 방식' ||
                   pinnedOnly) && (
@@ -790,7 +895,7 @@ export function ConferenceWorkspace({ userName }: { userName: string | null }) {
                         Number(milestone.eventAt.slice(8, 10)) === day,
                     );
                     const valid = day >= 1 && day <= 30;
-                    const today = day === 8;
+                    const today = day === currentCalendarDay;
                     return (
                       <div
                         key={`${day}-${index}`}
@@ -916,7 +1021,7 @@ export function ConferenceWorkspace({ userName }: { userName: string | null }) {
         open={selected !== null}
         onOpenChange={(open) => !open && setSelectedEvent(null)}
       >
-        <SheetContent className="w-[95vw] border-[#2F6B3F]/14 bg-[#FFFDF5] sm:max-w-xl">
+        <SheetContent className="w-[96vw] border-[#2F6B3F]/14 bg-[#FFFDF5] sm:max-w-3xl lg:max-w-4xl">
           {selected && selectedMilestone && (
             <>
               <SheetHeader className="border-b border-[#2F6B3F]/10 px-6 pb-5 pt-8">
@@ -1016,7 +1121,7 @@ export function ConferenceWorkspace({ userName }: { userName: string | null }) {
                     </span>
                   </div>
                   <div className="overflow-hidden rounded-xl border border-[#2F6B3F]/10 bg-white">
-                    <div className="hidden grid-cols-[minmax(0,1fr)_9.5rem_4.5rem] gap-3 bg-[#FFF9DA] px-4 py-2 text-xs font-bold text-[#657067] sm:grid">
+                    <div className="hidden grid-cols-[minmax(18rem,1fr)_8rem_4.5rem] gap-3 bg-[#FFF9DA] px-4 py-2 text-xs font-bold text-[#657067] sm:grid">
                       <span>공식 일정</span>
                       <span>날짜</span>
                       <span className="text-right">D-Day</span>
@@ -1025,10 +1130,10 @@ export function ConferenceWorkspace({ userName }: { userName: string | null }) {
                       {selected.milestones.map((milestone) => (
                         <div
                           key={milestone.id}
-                          className={`grid gap-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_9.5rem_4.5rem] sm:items-center sm:gap-3 ${milestone.id === selectedMilestone.id ? 'bg-[#FFF6C0]/60' : ''}`}
+                          className={`grid gap-2 px-4 py-3 sm:grid-cols-[minmax(18rem,1fr)_8rem_4.5rem] sm:items-center sm:gap-3 ${milestone.id === selectedMilestone.id ? 'bg-[#FFF6C0]/60' : ''}`}
                         >
                           <div className="min-w-0">
-                            <p className="truncate text-sm font-bold text-[#294432]">
+                            <p className="text-sm font-bold leading-5 text-[#294432]">
                               {milestoneLabel(milestone)}
                             </p>
                             <p className="mt-0.5 text-xs text-[#7B867E] sm:hidden">
