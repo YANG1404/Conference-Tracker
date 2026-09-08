@@ -304,6 +304,27 @@ function formatDate(milestone: Milestone, compact = false) {
   );
 }
 
+function formatDeadlineDate(milestone: Milestone) {
+  return new Intl.DateTimeFormat('ko-KR', {
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    timeZone: 'UTC',
+  }).format(new Date(milestone.eventAt));
+}
+
+function formatDeadlineTime(milestone: Milestone) {
+  if (!milestone.timeConfirmed) return milestone.originalTimezone;
+
+  const time = new Intl.DateTimeFormat('ko-KR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'UTC',
+  }).format(new Date(milestone.eventAt));
+
+  return `${time} · ${milestone.originalTimezone}`;
+}
+
 function EventPill({
   conference,
   milestone,
@@ -1021,7 +1042,7 @@ export function ConferenceWorkspace({ userName }: { userName: string | null }) {
         open={selected !== null}
         onOpenChange={(open) => !open && setSelectedEvent(null)}
       >
-        <SheetContent className="w-[96vw] border-[#2F6B3F]/14 bg-[#FFFDF5] sm:max-w-3xl lg:max-w-4xl">
+        <SheetContent className="border-[#2F6B3F]/14 bg-[#FFFDF5] data-[side=right]:w-[96vw] data-[side=right]:max-w-none data-[side=right]:sm:w-[80vw] data-[side=right]:sm:max-w-none data-[side=right]:lg:w-[50vw] data-[side=right]:lg:max-w-[64rem]">
           {selected && selectedMilestone && (
             <>
               <SheetHeader className="border-b border-[#2F6B3F]/10 px-6 pb-5 pt-8">
@@ -1121,19 +1142,19 @@ export function ConferenceWorkspace({ userName }: { userName: string | null }) {
                     </span>
                   </div>
                   <div className="overflow-hidden rounded-xl border border-[#2F6B3F]/10 bg-white">
-                    <div className="hidden grid-cols-[minmax(18rem,1fr)_8rem_4.5rem] gap-3 bg-[#FFF9DA] px-4 py-2 text-xs font-bold text-[#657067] sm:grid">
-                      <span>공식 일정</span>
-                      <span>날짜</span>
+                    <div className="hidden grid-cols-[minmax(0,1fr)_8.75rem_4.5rem] gap-3 bg-[#FFF9DA] px-4 py-2 text-xs font-bold text-[#657067] sm:grid">
+                      <span className="min-w-0">공식 일정</span>
+                      <span className="min-w-0">기한</span>
                       <span className="text-right">D-Day</span>
                     </div>
                     <div className="divide-y divide-[#2F6B3F]/8">
                       {selected.milestones.map((milestone) => (
                         <div
                           key={milestone.id}
-                          className={`grid gap-2 px-4 py-3 sm:grid-cols-[minmax(18rem,1fr)_8rem_4.5rem] sm:items-center sm:gap-3 ${milestone.id === selectedMilestone.id ? 'bg-[#FFF6C0]/60' : ''}`}
+                          className={`grid gap-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_8.75rem_4.5rem] sm:items-center sm:gap-3 ${milestone.id === selectedMilestone.id ? 'bg-[#FFF6C0]/60' : ''}`}
                         >
                           <div className="min-w-0">
-                            <p className="text-sm font-bold leading-5 text-[#294432]">
+                            <p className="break-words text-sm font-bold leading-5 text-[#294432]">
                               {milestoneLabel(milestone)}
                             </p>
                             <p className="mt-0.5 text-xs text-[#7B867E] sm:hidden">
@@ -1141,16 +1162,18 @@ export function ConferenceWorkspace({ userName }: { userName: string | null }) {
                               {milestone.originalTimezone}
                             </p>
                           </div>
-                          <p className="hidden text-xs leading-5 text-[#667168] sm:block">
-                            {formatDate(milestone)}
+                          <p className="hidden min-w-0 text-xs leading-5 text-[#667168] sm:block">
+                            <span className="whitespace-nowrap">
+                              {formatDeadlineDate(milestone)}
+                            </span>
                             <br />
-                            <span className="text-[#899188]">
-                              {milestone.originalTimezone}
+                            <span className="whitespace-nowrap text-[#899188]">
+                              {formatDeadlineTime(milestone)}
                             </span>
                           </p>
                           <Badge
                             variant="outline"
-                            className={`w-fit justify-self-start text-xs font-black sm:justify-self-end ${milestone.dDay < 0 ? 'border-[#2F6B3F]/15 bg-[#F2F4EF] text-[#758078]' : milestone.dDay === 0 ? 'border-[#E2AD36] bg-[#F7C85C] text-[#4B3910]' : 'border-[#7FB77E]/40 bg-[#7FB77E]/10 text-[#2F6B3F]'}`}
+                            className={`w-fit whitespace-nowrap justify-self-start text-xs font-black sm:justify-self-end ${milestone.dDay < 0 ? 'border-[#2F6B3F]/15 bg-[#F2F4EF] text-[#758078]' : milestone.dDay === 0 ? 'border-[#E2AD36] bg-[#F7C85C] text-[#4B3910]' : 'border-[#7FB77E]/40 bg-[#7FB77E]/10 text-[#2F6B3F]'}`}
                           >
                             {dDayLabel(milestone.dDay)}
                           </Badge>
