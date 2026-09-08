@@ -1,0 +1,2 @@
+# Comma-separated administrator email allowlist for server-side authorization.
+CONFERENCE_TRACKER_ADMIN_EMAILS=admin@example.com
