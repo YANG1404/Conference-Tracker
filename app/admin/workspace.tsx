@@ -7,7 +7,6 @@ import {
   useMemo,
   useState,
 } from 'react';
-import Link from 'next/link';
 import {
   ArrowLeft,
   CalendarDays,
@@ -369,13 +368,14 @@ export function AdminWorkspace({ userName }: { userName: string }) {
     <div className="min-h-screen bg-[#F8F8EC] text-[#203126]">
       <header className="bg-[#2F6B3F] text-white">
         <div className="mx-auto flex h-20 max-w-[1500px] items-center gap-4 px-5 sm:px-8">
-          <Link
-            href="/"
+          <button
+            type="button"
+            onClick={() => window.location.assign('/')}
             className="grid size-10 place-items-center rounded-xl bg-white/10 transition hover:bg-white/20"
             aria-label="캘린더로 돌아가기"
           >
             <ArrowLeft />
-          </Link>
+          </button>
           <div>
             <p className="text-lg font-black tracking-tight">
               Conference Tracker Admin
