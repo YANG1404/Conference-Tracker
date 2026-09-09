@@ -31,7 +31,7 @@ The primary model is set with GEMINI_MODEL. For temporary HTTP 503 congestion, o
 
 ## Scheduling
 
-The Worker exports a scheduled handler, with a six-hour cron in vite.config.ts. CCF resumes incomplete batches at the next tick and refreshes completed imports after 24 hours. Official targets are enabled automatically and refresh after 72 hours, with at most three targets per invocation, ordered by pin count. Unchanged HTML skips Gemini while re-applying its validated snapshot when needed.
+The Worker exports a scheduled handler, with a six-hour cron in vite.config.ts. CCF resumes incomplete batches at the next tick and refreshes completed imports after 24 hours. Official targets are enabled automatically and refresh after 72 hours, with at most three targets processed concurrently per invocation, ordered by pin count. Unchanged HTML skips Gemini while re-applying its validated snapshot when needed.
 
 Cron activation depends on the hosting platform applying Worker triggers; a successful deployment alone is not proof that a cron fired. The same job can be called by an external scheduler:
 

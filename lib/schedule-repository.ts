@@ -545,17 +545,20 @@ export async function collectDue() {
       .bind(new Date().toISOString(), new Date().toISOString())
       .all<{ id: number }>()
   ).results;
-  for (const feed of due) {
-    try {
-      await collectOfficial(feed.id);
-      results.push({ id: feed.id, ok: true });
-    } catch (cause) {
-      results.push({
-        id: feed.id,
-        ok: false,
-        message: cause instanceof Error ? cause.message : '실패',
-      });
-    }
-  }
+  const officialResults = await Promise.all(
+    due.map(async (feed) => {
+      try {
+        await collectOfficial(feed.id);
+        return { id: feed.id, ok: true };
+      } catch (cause) {
+        return {
+          id: feed.id,
+          ok: false,
+          message: cause instanceof Error ? cause.message : '실패',
+        };
+      }
+    }),
+  );
+  results.push(...officialResults);
   return results;
 }
