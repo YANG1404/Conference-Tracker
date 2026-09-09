@@ -1,4 +1,4 @@
-import { overlaps } from '@/lib/schedule-time';
+import { normalizeScheduleDate, overlaps } from '@/lib/schedule-time';
 import { error, json } from '@/lib/api';
 import { getConferenceViews } from '@/lib/conference-service';
 import { getRepositoryUser } from '@/lib/google-auth';
@@ -19,6 +19,12 @@ export async function GET(request: Request) {
       Date.parse(to) - Date.parse(from) > 370 * 86400000
     )
       return error(400, 'INVALID_PARAMETER', '올바른 조회 기간이 필요합니다.');
+    try {
+      normalizeScheduleDate(from, 'UTC', false);
+      normalizeScheduleDate(to, 'UTC', false);
+    } catch {
+      return error(400, 'INVALID_PARAMETER', '존재하는 날짜를 입력하세요.');
+    }
     const conferences = await getConferenceViews(
       await getRepositoryUser(request),
     );

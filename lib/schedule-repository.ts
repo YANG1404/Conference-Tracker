@@ -149,6 +149,19 @@ export async function syncCcf() {
     const unmatched: string[] = [];
     const errors: string[] = [];
     const year = new Date().getUTCFullYear();
+    const existing = (
+      await db()
+        .prepare(
+          'SELECT id,series_id,edition_year,acronym FROM conferences ORDER BY id',
+        )
+        .all<{
+          id: number;
+          series_id: number | null;
+          edition_year: number;
+          acronym: string;
+        }>()
+    ).results;
+    const pending: D1PreparedStatement[] = [];
     for (const item of parseCcf(source.text)) {
       const series =
         byDblp.get(canonicalKey(item.dblp || '')) ||
@@ -163,19 +176,18 @@ export async function syncCcf() {
         const position = visited++;
         if (position < cursor || position >= cursor + 100) continue;
         try {
-          let c = await db()
-            .prepare(
-              'SELECT id FROM conferences WHERE series_id=? AND edition_year=? ORDER BY id LIMIT 1',
-            )
-            .bind(series.id, conf.year)
-            .first<{ id: number }>();
+          let c: { id: number } | null | undefined = existing.find(
+            (row) =>
+              row.series_id === series.id && row.edition_year === conf.year,
+          );
           if (!c) {
-            c = await db()
-              .prepare(
-                'SELECT id FROM conferences WHERE lower(acronym)=lower(?) AND edition_year=? AND series_id IS NULL ORDER BY id LIMIT 1',
-              )
-              .bind(series.acronym + ' ' + conf.year, conf.year)
-              .first<{ id: number }>();
+            c = existing.find(
+              (row) =>
+                row.series_id === null &&
+                row.edition_year === conf.year &&
+                row.acronym?.toLowerCase() ===
+                  (series.acronym + ' ' + conf.year).toLowerCase(),
+            );
             if (c)
               await db()
                 .prepare('UPDATE conferences SET series_id=? WHERE id=?')
@@ -195,31 +207,40 @@ export async function syncCcf() {
               )
               .first<{ id: number }>();
           if (!c) throw new Error('학회 저장 실패');
+          if (!existing.some((row) => row.id === c!.id))
+            existing.push({
+              id: c.id,
+              series_id: series.id,
+              edition_year: conf.year,
+              acronym: series.acronym + ' ' + conf.year,
+            });
           const snapshot = ccfSnapshot(item, conf);
           const key = 'ccf:' + conf.id;
-          await db()
-            .prepare(
-              "INSERT INTO schedule_feeds(source_key,conference_id,kind,url,payload,content_hash,last_checked_at,last_success_at,status) VALUES (?,?,'CCF',?,?,?,?,?,'READY') ON CONFLICT(source_key) DO UPDATE SET payload=excluded.payload,content_hash=excluded.content_hash,last_checked_at=excluded.last_checked_at,last_success_at=excluded.last_success_at,status='READY'",
-            )
-            .bind(
-              key,
-              c.id,
-              CCF_URL,
-              JSON.stringify(snapshot),
-              await hashText(JSON.stringify(snapshot)),
-              new Date().toISOString(),
-              new Date().toISOString(),
-            )
-            .run();
+          pending.push(
+            db()
+              .prepare(
+                "INSERT INTO schedule_feeds(source_key,conference_id,kind,url,payload,content_hash,last_checked_at,last_success_at,status) VALUES (?,?,'CCF',?,?,?,?,?,'READY') ON CONFLICT(source_key) DO UPDATE SET payload=excluded.payload,content_hash=excluded.content_hash,last_checked_at=excluded.last_checked_at,last_success_at=excluded.last_success_at,status='READY'",
+              )
+              .bind(
+                key,
+                c.id,
+                CCF_URL,
+                JSON.stringify(snapshot),
+                await hashText(JSON.stringify(snapshot)),
+                new Date().toISOString(),
+                new Date().toISOString(),
+              ),
+          );
           // Explicit admin selection controls paid Gemini work. Suggested URLs are not auto-enabled.
           try {
             safeUrl(conf.link);
-            await db()
-              .prepare(
-                "INSERT OR IGNORE INTO schedule_feeds(source_key,conference_id,kind,url,enabled) VALUES (?,?,'OFFICIAL',?,0)",
-              )
-              .bind('official:' + c.id, c.id, conf.link)
-              .run();
+            pending.push(
+              db()
+                .prepare(
+                  "INSERT OR IGNORE INTO schedule_feeds(source_key,conference_id,kind,url,enabled) VALUES (?,?,'OFFICIAL',?,0)",
+                )
+                .bind('official:' + c.id, c.id, conf.link),
+            );
           } catch {
             snapshot.warnings.push('공식 HTTPS URL 수동 지정 필요');
           }
@@ -234,6 +255,8 @@ export async function syncCcf() {
         }
       }
     }
+    for (let index = 0; index < pending.length; index += 50)
+      await db().batch(pending.slice(index, index + 50));
     const nextCursor = visited > cursor + 100 ? cursor + 100 : null;
     const result = {
       next_cursor: nextCursor,
