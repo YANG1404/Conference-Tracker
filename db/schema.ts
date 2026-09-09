@@ -54,10 +54,34 @@ export const userSessions = sqliteTable(
   ],
 );
 
+export const conferenceSeries = sqliteTable(
+  'conference_series',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    catalogKey: text('catalog_key').notNull(),
+    acronym: text('acronym').notNull(),
+    name: text('name').notNull(),
+    dblpKey: text('dblp_key').notNull(),
+    isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+    createdAt: text('created_at')
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text('updated_at')
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex('uq_conference_series_catalog_key').on(table.catalogKey),
+    index('idx_conference_series_acronym').on(table.acronym),
+    index('idx_conference_series_dblp').on(table.dblpKey),
+  ],
+);
+
 export const conferences = sqliteTable(
   'conferences',
   {
     id: integer('id').primaryKey({ autoIncrement: true }),
+    seriesId: integer('series_id').references(() => conferenceSeries.id),
     name: text('name').notNull(),
     acronym: text('acronym'),
     editionYear: integer('edition_year'),
@@ -79,6 +103,7 @@ export const conferences = sqliteTable(
       .default(sql`CURRENT_TIMESTAMP`),
   },
   (table) => [
+    index('idx_conferences_series_year').on(table.seriesId, table.editionYear),
     index('idx_conferences_name_year').on(table.name, table.editionYear),
     index('idx_conferences_status_country').on(table.status, table.countryCode),
   ],
@@ -351,6 +376,7 @@ export const conferenceCatalogEntries = sqliteTable(
   'conference_catalog_entries',
   {
     id: integer('id').primaryKey({ autoIncrement: true }),
+    seriesId: integer('series_id').references(() => conferenceSeries.id),
     sourceRow: integer('source_row').notNull(),
     acronym: text('acronym').notNull(),
     canonicalAcronym: text('canonical_acronym').notNull(),
@@ -366,6 +392,10 @@ export const conferenceCatalogEntries = sqliteTable(
       .default(false),
     postechGrade: text('postech_grade'),
     normalizedScore: text('normalized_score'),
+    trackName: text('track_name'),
+    presentationType: text('presentation_type'),
+    sourceUrl: text('source_url').notNull().default(''),
+    rawRow: text('raw_row').notNull().default(''),
     isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
     syncedAt: text('synced_at')
       .notNull()
@@ -375,6 +405,7 @@ export const conferenceCatalogEntries = sqliteTable(
     uniqueIndex('uq_conference_catalog_source_row').on(table.sourceRow),
     index('idx_conference_catalog_canonical').on(table.canonicalAcronym),
     index('idx_conference_catalog_dblp').on(table.dblpKey),
+    index('idx_conference_catalog_series').on(table.seriesId),
   ],
 );
 

@@ -7,7 +7,7 @@ function db(): D1Database {
 }
 
 export async function getProfile(user: AppUser) {
-  const [fields, pins] = await Promise.all([
+  const [fields, pins, pinFields] = await Promise.all([
     db()
       .prepare(`
         SELECT rf.id, rf.acm_ccs_code, rf.name_ko, rf.name_en, urf.is_primary
@@ -19,15 +19,40 @@ export async function getProfile(user: AppUser) {
       .all<Record<string, unknown>>(),
     db()
       .prepare(`
-        SELECT c.id, c.name, c.acronym, c.edition_year,
-          (SELECT MIN(m.event_at) FROM milestones m WHERE m.conference_id = c.id AND m.event_at >= CURRENT_TIMESTAMP) AS next_milestone_at,
+        SELECT c.id, c.name, c.acronym, c.edition_year, c.country_code, c.format,
+          m.id AS next_milestone_id, m.group_name AS next_group_name,
+          m.title AS next_milestone_title, m.event_at AS next_milestone_at,
+          m.original_timezone AS next_milestone_timezone,
           p.created_at AS pinned_at
-        FROM pins p JOIN conferences c ON c.id = p.conference_id
+        FROM pins p
+        JOIN conferences c ON c.id = p.conference_id
+        LEFT JOIN milestones m ON m.id = (
+          SELECT future.id FROM milestones future
+          WHERE future.conference_id = c.id AND future.event_at >= CURRENT_TIMESTAMP
+          ORDER BY future.event_at LIMIT 1
+        )
         WHERE p.user_id = ? ORDER BY next_milestone_at IS NULL, next_milestone_at, c.name
       `)
       .bind(user.id)
       .all<Record<string, unknown>>(),
+    db()
+      .prepare(`
+        SELECT p.conference_id, rf.id, rf.acm_ccs_code, rf.name_ko, rf.name_en, crf.is_primary
+        FROM pins p
+        JOIN conference_research_fields crf ON crf.conference_id = p.conference_id
+        JOIN research_fields rf ON rf.id = crf.research_field_id
+        WHERE p.user_id = ?
+        ORDER BY p.conference_id, crf.is_primary DESC, rf.name_ko
+      `)
+      .bind(user.id)
+      .all<Record<string, unknown>>(),
   ]);
+  const pinnedConferences = pins.results.map((pin) => ({
+    ...pin,
+    research_fields: pinFields.results.filter(
+      (field) => Number(field.conference_id) === Number(pin.id),
+    ),
+  }));
   return {
     id: user.id,
     email: user.email,
@@ -36,7 +61,8 @@ export async function getProfile(user: AppUser) {
     role: user.role,
     created_at: user.createdAt,
     research_fields: fields.results,
-    pinned_conferences: pins.results,
+    pinned_conference_count: pinnedConferences.length,
+    pinned_conferences: pinnedConferences,
   };
 }
 
@@ -73,4 +99,17 @@ export async function updateProfile(
   }
   await db().batch(statements);
   return getProfile({ ...user, displayName: input.display_name.trim() });
+}
+
+export async function validResearchFieldIds(ids: number[]) {
+  const uniqueIds = [...new Set(ids)];
+  if (uniqueIds.length === 0) return [];
+  const placeholders = uniqueIds.map(() => '?').join(', ');
+  const result = await db()
+    .prepare(
+      `SELECT id FROM research_fields WHERE is_active = 1 AND id IN (${placeholders})`,
+    )
+    .bind(...uniqueIds)
+    .all<{ id: number }>();
+  return result.results.map((field) => Number(field.id));
 }

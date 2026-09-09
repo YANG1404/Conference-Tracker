@@ -4,8 +4,17 @@ import { GoogleSignIn } from './google-sign-in';
 
 export const dynamic = 'force-dynamic';
 
-export default async function LoginPage() {
+function safeReturnPath(value: string | undefined) {
+  return value?.startsWith('/') && !value.startsWith('//') ? value : '/';
+}
+
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ return_to?: string }>;
+}) {
   const user = await getPageSessionUser();
+  const returnTo = safeReturnPath((await searchParams).return_to);
   if (user) {
     return (
       <main className="grid min-h-screen place-items-center bg-[#FFFDF2] px-5 text-[#203126]">
@@ -13,7 +22,7 @@ export default async function LoginPage() {
           <h1 className="text-2xl font-black text-[#204F31]">
             이미 로그인되어 있습니다
           </h1>
-          <form action="/" method="get">
+          <form action={returnTo} method="get">
             <button
               type="submit"
               className="mt-6 inline-flex h-11 items-center rounded-xl bg-[#2F6B3F] px-5 font-bold text-white"
@@ -39,7 +48,7 @@ export default async function LoginPage() {
           일정 확인은 로그인 없이 이용할 수 있습니다.
         </p>
         <div className="mt-7 flex justify-center">
-          <GoogleSignIn clientId={googleClientId()} />
+          <GoogleSignIn clientId={googleClientId()} returnTo={returnTo} />
         </div>
         <form action="/" method="get" className="mt-6 text-center">
           <button

@@ -22,7 +22,13 @@ declare global {
   }
 }
 
-export function GoogleSignIn({ clientId }: { clientId: string }) {
+export function GoogleSignIn({
+  clientId,
+  returnTo,
+}: {
+  clientId: string;
+  returnTo: string;
+}) {
   const buttonRef = useRef<HTMLDivElement>(null);
   const [message, setMessage] = useState('');
   const [working, setWorking] = useState(false);
@@ -41,7 +47,7 @@ export function GoogleSignIn({ clientId }: { clientId: string }) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ credential }),
           });
-          if (response.ok) window.location.assign('/');
+          if (response.ok) window.location.assign(returnTo);
           else {
             setWorking(false);
             setMessage('로그인을 완료하지 못했습니다. 다시 시도해 주세요.');
@@ -74,7 +80,7 @@ export function GoogleSignIn({ clientId }: { clientId: string }) {
     script.dataset.googleIdentity = 'true';
     script.addEventListener('load', render, { once: true });
     document.head.appendChild(script);
-  }, [clientId]);
+  }, [clientId, returnTo]);
 
   if (!clientId)
     return (

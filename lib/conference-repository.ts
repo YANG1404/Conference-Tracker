@@ -713,11 +713,12 @@ export async function createConference(
   if (!current) return { kind: 'forbidden' as const };
   const result = await db()
     .prepare(`
-    INSERT INTO conferences (name, acronym, edition_year, description, country_code, city, venue, format, status, verified_by, last_verified_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    INSERT INTO conferences (series_id, name, acronym, edition_year, description, country_code, city, venue, format, status, verified_by, last_verified_at)
+    VALUES ((SELECT id FROM conference_series WHERE lower(acronym) = lower(?) LIMIT 1), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     RETURNING *
   `)
     .bind(
+      input.acronym ?? '',
       input.name,
       input.acronym ?? null,
       input.edition_year ?? null,
@@ -853,10 +854,11 @@ export async function updateConference(
   await db()
     .prepare(`
       UPDATE conferences
-      SET name = ?, acronym = ?, edition_year = ?, description = ?, country_code = ?, city = ?, venue = ?, format = ?, status = ?, verified_by = ?, last_verified_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      SET series_id = (SELECT id FROM conference_series WHERE lower(acronym) = lower(?) LIMIT 1), name = ?, acronym = ?, edition_year = ?, description = ?, country_code = ?, city = ?, venue = ?, format = ?, status = ?, verified_by = ?, last_verified_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `)
     .bind(
+      input.acronym ?? '',
       input.name,
       input.acronym ?? null,
       input.edition_year ?? null,

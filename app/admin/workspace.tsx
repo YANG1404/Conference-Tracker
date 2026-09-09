@@ -11,6 +11,7 @@ import {
   ArrowLeft,
   CalendarDays,
   Check,
+  CloudDownload,
   Database,
   Globe2,
   Link2,
@@ -83,6 +84,23 @@ type Stats = {
   published_conferences: number;
   total_milestones: number;
   active_sources: number;
+};
+type CatalogStatus = {
+  status: string;
+  source_url: string;
+  row_count: number;
+  series_count: number;
+  last_synced_at: string | null;
+  error_message: string | null;
+};
+type CatalogItem = {
+  id: number;
+  acronym: string;
+  name: string;
+  dblp_key: string;
+  source_row_count: number;
+  presentation_types: string | null;
+  tracks: string | null;
 };
 type MilestoneDraft = {
   group_name: string;
@@ -160,8 +178,13 @@ export function AdminWorkspace({ userName }: { userName: string }) {
   const [conferences, setConferences] = useState<AdminConference[]>([]);
   const [sources, setSources] = useState<SourceSite[]>([]);
   const [fields, setFields] = useState<ResearchField[]>([]);
+  const [catalogStatus, setCatalogStatus] = useState<CatalogStatus | null>(
+    null,
+  );
+  const [catalogItems, setCatalogItems] = useState<CatalogItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [syncingCatalog, setSyncingCatalog] = useState(false);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [search, setSearch] = useState('');
@@ -178,6 +201,8 @@ export function AdminWorkspace({ userName }: { userName: string }) {
       fetch('/api/v1/admin/conferences'),
       fetch('/api/v1/admin/source-sites'),
       fetch('/api/v1/research-fields'),
+      fetch('/api/v1/admin/catalog/status'),
+      fetch('/api/v1/catalog?limit=100'),
     ]);
     if (responses.some((response) => !response.ok)) {
       const denied = responses.some((response) => response.status === 403);
@@ -189,17 +214,27 @@ export function AdminWorkspace({ userName }: { userName: string }) {
       setLoading(false);
       return;
     }
-    const [statsData, conferencesData, sourcesData, fieldsData] =
-      (await Promise.all(responses.map((response) => response.json()))) as [
-        Stats,
-        { items: AdminConference[] },
-        { items: SourceSite[] },
-        ResearchField[],
-      ];
+    const [
+      statsData,
+      conferencesData,
+      sourcesData,
+      fieldsData,
+      catalogStatusData,
+      catalogData,
+    ] = (await Promise.all(responses.map((response) => response.json()))) as [
+      Stats,
+      { items: AdminConference[] },
+      { items: SourceSite[] },
+      ResearchField[],
+      CatalogStatus,
+      { items: CatalogItem[] },
+    ];
     setStats(statsData);
     setConferences(conferencesData.items);
     setSources(sourcesData.items);
     setFields(fieldsData);
+    setCatalogStatus(catalogStatusData);
+    setCatalogItems(catalogData.items);
     setLoading(false);
   }, []);
 
@@ -364,6 +399,28 @@ export function AdminWorkspace({ userName }: { userName: string }) {
     await load();
   }
 
+  async function synchronizeCatalog() {
+    setSyncingCatalog(true);
+    setMessage('');
+    setErrorMessage('');
+    const response = await fetch('/api/v1/admin/catalog/sync', {
+      method: 'POST',
+    });
+    setSyncingCatalog(false);
+    if (!response.ok) {
+      setErrorMessage('Gist CSV 카탈로그 동기화에 실패했습니다.');
+      return;
+    }
+    const result = (await response.json()) as {
+      row_count: number;
+      series_count: number;
+    };
+    setMessage(
+      `CSV ${result.row_count}개 행을 ${result.series_count}개 학회로 정규화했습니다.`,
+    );
+    await load();
+  }
+
   return (
     <div className="min-h-screen bg-[#F8F8EC] text-[#203126]">
       <header className="bg-[#2F6B3F] text-white">
@@ -431,7 +488,7 @@ export function AdminWorkspace({ userName }: { userName: string }) {
           </div>
         )}
 
-        <section className="mt-6 grid gap-4 md:grid-cols-3">
+        <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {[
             {
               label: '공개 학회',
@@ -450,6 +507,12 @@ export function AdminWorkspace({ userName }: { userName: string }) {
               value: stats?.active_sources ?? '—',
               icon: Database,
               tone: 'bg-[#DDEDDC] text-[#2F6B3F]',
+            },
+            {
+              label: 'CSV 기준 학회',
+              value: catalogStatus?.series_count ?? '—',
+              icon: ListTree,
+              tone: 'bg-[#FDE8A8] text-[#795914]',
             },
           ].map((item) => (
             <div
@@ -477,6 +540,9 @@ export function AdminWorkspace({ userName }: { userName: string }) {
               </TabsTrigger>
               <TabsTrigger value="sources" className="px-4">
                 수집 출처
+              </TabsTrigger>
+              <TabsTrigger value="catalog" className="px-4">
+                기준 카탈로그
               </TabsTrigger>
             </TabsList>
             <Button
@@ -661,6 +727,91 @@ export function AdminWorkspace({ userName }: { userName: string }) {
                   </div>
                 </article>
               ))}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="catalog" className="mt-4">
+            <div className="rounded-2xl border border-[#2F6B3F]/10 bg-white p-5 shadow-sm">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h2 className="font-black text-[#204F31]">
+                    CS 분야 우수 학술대회 CSV
+                  </h2>
+                  <p className="mt-1 max-w-2xl text-sm leading-6 text-[#68746B]">
+                    모든 원본 행을 보존하고, 발표 형태 중복은 학회 단위로
+                    병합하며 Findings는 트랙으로 연결합니다.
+                  </p>
+                  <p className="mt-2 text-xs text-[#7B867E]">
+                    원본 {catalogStatus?.row_count ?? 0}행 · 정규화{' '}
+                    {catalogStatus?.series_count ?? 0}개 · 마지막 동기화{' '}
+                    {catalogStatus?.last_synced_at
+                      ? new Date(catalogStatus.last_synced_at).toLocaleString(
+                          'ko-KR',
+                        )
+                      : '기록 없음'}
+                  </p>
+                  {catalogStatus?.error_message && (
+                    <p className="mt-2 text-sm font-semibold text-red-700">
+                      {catalogStatus.error_message}
+                    </p>
+                  )}
+                </div>
+                <Button
+                  className="w-fit bg-[#2F6B3F] text-white"
+                  onClick={() => void synchronizeCatalog()}
+                  disabled={syncingCatalog}
+                >
+                  <CloudDownload
+                    className={syncingCatalog ? 'animate-pulse' : ''}
+                  />
+                  {syncingCatalog ? '동기화 중…' : 'Gist CSV 동기화'}
+                </Button>
+              </div>
+            </div>
+            <div className="mt-3 overflow-hidden rounded-2xl border border-[#2F6B3F]/10 bg-white shadow-sm">
+              <Table>
+                <TableHeader className="bg-[#FFF9DA]">
+                  <TableRow>
+                    <TableHead className="pl-5">학회</TableHead>
+                    <TableHead>DBLP Key</TableHead>
+                    <TableHead>원본 행</TableHead>
+                    <TableHead>병합 정보</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {catalogItems.map((item) => (
+                    <TableRow key={item.id}>
+                      <TableCell className="pl-5">
+                        <p className="font-black text-[#204F31]">
+                          {item.acronym}
+                        </p>
+                        <p className="mt-1 max-w-[480px] text-xs text-[#68746B]">
+                          {item.name}
+                        </p>
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {item.dblp_key}
+                      </TableCell>
+                      <TableCell>{item.source_row_count}행</TableCell>
+                      <TableCell className="text-xs text-[#68746B]">
+                        {[item.presentation_types, item.tracks]
+                          .filter(Boolean)
+                          .join(' · ') || '단일 행'}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {!loading && catalogItems.length === 0 && (
+                    <TableRow>
+                      <TableCell
+                        colSpan={4}
+                        className="py-14 text-center text-[#748078]"
+                      >
+                        Gist CSV 동기화를 실행해 주세요.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
             </div>
           </TabsContent>
         </Tabs>

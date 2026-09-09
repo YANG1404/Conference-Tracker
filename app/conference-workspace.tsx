@@ -11,6 +11,7 @@ import {
   Clock3,
   ExternalLink,
   Filter,
+  LibraryBig,
   LayoutGrid,
   List,
   LogIn,
@@ -18,6 +19,7 @@ import {
   MapPin,
   Search,
   ShieldCheck,
+  UserRound,
   Users,
   X,
 } from 'lucide-react';
@@ -376,13 +378,17 @@ function EventPill({
 export function ConferenceWorkspace({
   userName,
   userEmail,
+  userImage,
   isAuthenticated,
   isAdmin,
+  initialConferenceId,
 }: {
   userName: string | null;
   userEmail: string | null;
+  userImage: string | null;
   isAuthenticated: boolean;
   isAdmin: boolean;
+  initialConferenceId: number | null;
 }) {
   const [conferenceItems, setConferenceItems] =
     useState<Conference[]>(demoConferences);
@@ -398,6 +404,9 @@ export function ConferenceWorkspace({
   const [view, setView] = useState<'calendar' | 'list'>('calendar');
   const [mobileFilters, setMobileFilters] = useState(false);
   const [loginPromptOpen, setLoginPromptOpen] = useState(false);
+  const [loginReturnConferenceId, setLoginReturnConferenceId] = useState<
+    number | null
+  >(null);
   const currentCalendarDay = Number(
     new Intl.DateTimeFormat('en-US', {
       timeZone: 'Asia/Seoul',
@@ -534,8 +543,27 @@ export function ConferenceWorkspace({
     }
   }, [isAuthenticated]);
 
+  useEffect(() => {
+    if (!initialConferenceId || selectedEvent) return;
+    const conference = conferenceItems.find(
+      (item) => item.id === initialConferenceId,
+    );
+    const milestone = conference?.milestones[0];
+    if (!conference || !milestone) return;
+    const timeout = window.setTimeout(
+      () =>
+        setSelectedEvent({
+          conferenceId: conference.id,
+          milestoneId: milestone.id,
+        }),
+      0,
+    );
+    return () => window.clearTimeout(timeout);
+  }, [conferenceItems, initialConferenceId, selectedEvent]);
+
   const togglePin = async (id: number) => {
     if (!isAuthenticated) {
+      setLoginReturnConferenceId(id);
       setLoginPromptOpen(true);
       return;
     }
@@ -642,20 +670,35 @@ export function ConferenceWorkspace({
               </p>
             </div>
           </div>
+          <Button
+            type="button"
+            variant="ghost"
+            className="ml-auto hidden text-[#2F6B3F] sm:inline-flex"
+            onClick={() => window.location.assign('/catalog')}
+          >
+            <LibraryBig /> 학회 카탈로그
+          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
                 <Button
                   type="button"
                   variant="outline"
-                  className="ml-auto h-11 rounded-full border-[#2F6B3F]/12 bg-white py-1.5 pl-1.5 pr-2 shadow-none hover:bg-[#F5FAF2] sm:pr-3"
+                  className="h-11 rounded-full border-[#2F6B3F]/12 bg-white py-1.5 pl-1.5 pr-2 shadow-none hover:bg-[#F5FAF2] sm:pr-3"
                   aria-label="계정 메뉴 열기"
                 />
               }
             >
-              <span className="grid size-8 shrink-0 place-items-center rounded-full bg-[#7FB77E] text-sm font-bold text-white">
-                {(userName ?? 'G').slice(0, 1).toUpperCase()}
-              </span>
+              {userImage ? (
+                <span
+                  className="size-8 shrink-0 rounded-full bg-cover bg-center"
+                  style={{ backgroundImage: `url(${userImage})` }}
+                />
+              ) : (
+                <span className="grid size-8 shrink-0 place-items-center rounded-full bg-[#7FB77E] text-sm font-bold text-white">
+                  {(userName ?? 'G').slice(0, 1).toUpperCase()}
+                </span>
+              )}
               <span className="hidden max-w-40 truncate text-sm font-semibold sm:block">
                 {userName ?? '로그인'}
               </span>
@@ -686,12 +729,43 @@ export function ConferenceWorkspace({
                       <button
                         type="button"
                         aria-label="Google 로그인 페이지 열기"
-                        onClick={() => window.location.assign('/login')}
+                        onClick={() =>
+                          window.location.assign('/login?return_to=%2F')
+                        }
                       />
                     }
                     className="px-2.5 py-2.5 font-semibold text-[#294432] focus:bg-[#7FB77E]/15"
                   >
                     <LogIn className="text-[#2F6B3F]" /> Google로 로그인
+                  </DropdownMenuItem>
+                </>
+              )}
+              {isAuthenticated && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    render={
+                      <button
+                        type="button"
+                        aria-label="내 정보 페이지 열기"
+                        onClick={() => window.location.assign('/me')}
+                      />
+                    }
+                    className="px-2.5 py-2.5 font-semibold text-[#294432] focus:bg-[#7FB77E]/15"
+                  >
+                    <UserRound className="text-[#2F6B3F]" /> 내 정보
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    render={
+                      <button
+                        type="button"
+                        aria-label="관심 학회 목록 열기"
+                        onClick={() => window.location.assign('/me#interests')}
+                      />
+                    }
+                    className="px-2.5 py-2.5 font-semibold text-[#294432] focus:bg-[#7FB77E]/15"
+                  >
+                    <Bookmark className="text-[#2F6B3F]" /> 관심 학회
                   </DropdownMenuItem>
                 </>
               )}
@@ -1116,7 +1190,14 @@ export function ConferenceWorkspace({
             <Button
               type="button"
               className="bg-[#2F6B3F] text-white hover:bg-[#245632]"
-              onClick={() => window.location.assign('/login')}
+              onClick={() => {
+                const returnTo = loginReturnConferenceId
+                  ? `/?conference=${loginReturnConferenceId}`
+                  : '/';
+                window.location.assign(
+                  `/login?return_to=${encodeURIComponent(returnTo)}`,
+                );
+              }}
             >
               <LogIn /> Google로 로그인
             </Button>

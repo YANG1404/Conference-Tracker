@@ -3,5 +3,6 @@ declare namespace Cloudflare {
     DB: D1Database;
     CONFERENCE_TRACKER_ADMIN_EMAILS?: string;
     GOOGLE_CLIENT_ID?: string;
+    CATALOG_SYNC_TOKEN?: string;
   }
 }
