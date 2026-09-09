@@ -81,6 +81,7 @@ type Milestone = {
 type Conference = {
   id: number;
   acronym: string;
+  editionYear: number | null;
   name: string;
   category: string;
   categories: string[];
@@ -109,6 +110,7 @@ type ApiMilestone = {
 type ApiConference = {
   id: number;
   acronym: string | null;
+  edition_year: number | null;
   name: string;
   description: string | null;
   country_code: string;
@@ -121,6 +123,15 @@ type ApiConference = {
 };
 
 type SelectedEvent = { conferenceId: number; milestoneId: number };
+
+function conferenceLabel(conference: Conference) {
+  if (
+    !conference.editionYear ||
+    conference.acronym.includes(String(conference.editionYear))
+  )
+    return conference.acronym;
+  return `${conference.acronym} ${conference.editionYear}`;
+}
 
 const weekDays = ['일', '월', '화', '수', '목', '금', '토'];
 const categories = [
@@ -216,7 +227,7 @@ function EventPill({
       className={`group w-full rounded-md border px-2 py-1.5 text-left transition hover:-translate-y-0.5 hover:shadow-sm ${tone}`}
     >
       <span className="block truncate text-[0.72rem] font-bold leading-tight">
-        {conference.acronym}
+        {conferenceLabel(conference)}
       </span>
       <span className="mt-0.5 hidden truncate text-[0.68rem] opacity-85 xl:block">
         {milestoneLabel(milestone)}
@@ -402,6 +413,7 @@ export function ConferenceWorkspace({
             return {
               id: item.id,
               acronym: item.acronym ?? item.name,
+              editionYear: item.edition_year,
               name: item.name,
               category: categoryName,
               categories: item.research_fields.map((field) => field.name_ko),
@@ -1121,7 +1133,7 @@ export function ConferenceWorkspace({
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <h2 className="font-black text-[#204F31]">
-                          {conference.acronym}
+                          {conferenceLabel(conference)}
                         </h2>
                         <Badge
                           variant="outline"
@@ -1235,7 +1247,7 @@ export function ConferenceWorkspace({
                   </Badge>
                 </div>
                 <SheetTitle className="pr-8 text-2xl font-black tracking-[-0.03em] text-[#183E28]">
-                  {selected.acronym}
+                  {conferenceLabel(selected)}
                 </SheetTitle>
                 <SheetDescription className="mt-1 leading-6 text-[#647068]">
                   {selected.name}

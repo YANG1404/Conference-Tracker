@@ -187,6 +187,38 @@ function snapshotStatements(
         ),
     );
   }
+  if (sourceKind === 'CCF') {
+    // Prefer a manually curated or official Papers submission over CCF's
+    // generic paper deadline when both appear on the same KST calendar day.
+    // This also removes the legacy seed + CCF duplicate (for example CHI).
+    statements.push(
+      db()
+        .prepare(`
+          DELETE FROM milestones AS ccf
+          WHERE ccf.conference_id=?
+            AND ccf.source_kind='CCF'
+            AND ccf.external_key NOT LIKE '%conference_dates'
+            AND lower(COALESCE(ccf.title,'')) LIKE '%paper%submission%'
+            AND EXISTS (
+              SELECT 1 FROM milestones AS curated
+              WHERE curated.conference_id=ccf.conference_id
+                AND curated.id<>ccf.id
+                AND COALESCE(curated.source_kind,'MANUAL')<>'CCF'
+                AND date(datetime(curated.event_at,'+9 hours'))=
+                    date(datetime(ccf.event_at,'+9 hours'))
+                AND (
+                  lower(COALESCE(curated.group_name,'') || ' ' || COALESCE(curated.title,''))
+                    LIKE '%paper%submission%'
+                  OR (
+                    lower(COALESCE(curated.group_name,'')) IN ('paper','papers')
+                    AND lower(COALESCE(curated.title,'')) LIKE '%submission%'
+                  )
+                )
+            )
+        `)
+        .bind(conferenceId),
+    );
+  }
   return statements;
 }
 
