@@ -120,7 +120,7 @@ export function GET() {
           summary: 'CCF 동기화 / Gemini 추출 / 수집 설정 / 갱신 예정 처리',
           security: [...session, { schedulerToken: [] }],
           description:
-            '세션 요청은 동일 Origin 필요. ccf 응답 next_cursor가 있으면 같은 요청을 재호출하여 다음 100개 회차를 처리합니다. 수집은 공개 일정을 직접 수정하지 않습니다.',
+            '세션 요청은 동일 Origin 필요. ccf 응답 next_cursor가 있으면 같은 요청을 재호출하여 다음 100개 회차를 처리합니다. 검증된 수집 결과는 공개 데이터에 먼저 병합되며 HIDDEN 상태와 기존 관리자 보정값은 보호됩니다.',
           requestBody: {
             required: true,
             content: json({

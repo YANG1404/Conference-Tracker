@@ -615,8 +615,13 @@ export function AdminWorkspace({ userName }: { userName: string }) {
                     <TableRow key={conference.id}>
                       <TableCell className="pl-5">
                         <p className="font-black text-[#204F31]">
-                          {conference.acronym || '약어 없음'}{' '}
-                          {conference.edition_year ?? ''}
+                          {conference.acronym || '약어 없음'}
+                          {conference.edition_year &&
+                          !conference.acronym?.includes(
+                            String(conference.edition_year),
+                          )
+                            ? ` ${conference.edition_year}`
+                            : ''}
                         </p>
                         <p className="mt-1 max-w-[360px] truncate text-xs text-[#748078]">
                           {conference.name}

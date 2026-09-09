@@ -11,8 +11,11 @@ import {
 import {
   canonicalKey,
   ccfSnapshot,
+  ccfResearchFieldCodes,
+  locationFromPlace,
   safeUrl,
   validateExtraction,
+  validateProfile,
   pageText,
 } from '../lib/schedule-collectors';
 
@@ -79,6 +82,42 @@ void test('CCF keeps source, rounds, unknown dates without guessing', () => {
   assert.equal(snapshot.milestones[0].event_at, '2026-09-11T11:59:59.000Z');
   assert.equal(canonicalKey('conf/chi'), 'chi');
 });
+void test('CCF profile derives location, field and conference period', () => {
+  const snapshot = ccfSnapshot(
+    { title: 'CHI', sub: 'HI' },
+    {
+      id: 'chi27',
+      year: 2027,
+      link: 'https://chi2027.acm.org/',
+      timezone: 'AoE',
+      date: 'May 11 - May 16, 2027',
+      place: 'Barcelona, Spain',
+      timeline: [],
+    },
+  );
+  assert.deepEqual(locationFromPlace('Barcelona, Spain'), {
+    country_code: 'ES',
+    city: 'Barcelona',
+    venue: null,
+    format: 'ONSITE',
+  });
+  assert.deepEqual(
+    locationFromPlace(
+      'Maastricht Congress Centre, Maastricht, The Netherlands',
+    ),
+    {
+      country_code: 'NL',
+      city: 'Maastricht',
+      venue: 'Maastricht Congress Centre',
+      format: 'ONSITE',
+    },
+  );
+  assert.deepEqual(ccfResearchFieldCodes({ title: 'CHI', sub: 'HI' }), [
+    '10003120',
+  ]);
+  assert.equal(snapshot.milestones[0].event_at, '2027-05-11');
+  assert.equal(snapshot.milestones[0].end_at, '2027-05-16');
+});
 void test('LLM evidence must belong to provided document, unknown dates omitted', () => {
   const docs = [
     {
@@ -138,4 +177,60 @@ void test('HTML keeps schedule rows, rejects unsafe URLs', () => {
     'https://127.0.0.1.nip.io/',
   ])
     assert.throws(() => safeUrl(url));
+});
+void test('official profile requires source evidence and known CCS codes', () => {
+  const docs = [
+    {
+      url: 'https://chi2027.acm.org/',
+      text: 'CHI is the premier conference on human-computer interaction. Barcelona, Spain. LINK: Submit | https://chi2027.acm.org/submit',
+    },
+  ];
+  const profile = validateProfile(
+    {
+      description: 'CHI는 인간-컴퓨터 상호작용 학술대회입니다.',
+      country_code: 'ES',
+      city: 'Barcelona',
+      venue: null,
+      format: 'ONSITE',
+      research_field_codes: ['10003120', 'invented'],
+      links: [
+        {
+          type: 'SUBMISSION',
+          label: '논문 제출',
+          url: 'https://chi2027.acm.org/submit',
+        },
+      ],
+      evidence: [
+        {
+          field: 'description',
+          source_url: docs[0].url,
+          evidence: 'premier conference on human-computer interaction',
+        },
+        {
+          field: 'country_code',
+          source_url: docs[0].url,
+          evidence: 'Barcelona, Spain',
+        },
+        {
+          field: 'city',
+          source_url: docs[0].url,
+          evidence: 'Barcelona, Spain',
+        },
+        {
+          field: 'format',
+          source_url: docs[0].url,
+          evidence: 'Barcelona, Spain',
+        },
+        {
+          field: 'research_field_codes',
+          source_url: docs[0].url,
+          evidence: 'human-computer interaction',
+        },
+      ],
+    },
+    docs,
+  );
+  assert.equal(profile.country_code, 'ES');
+  assert.deepEqual(profile.research_field_codes, ['10003120']);
+  assert.equal(profile.links?.length, 1);
 });

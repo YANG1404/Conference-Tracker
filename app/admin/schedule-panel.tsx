@@ -246,8 +246,8 @@ export function ScheduleImportEditor({
     <section className="rounded-xl border border-[#7FB77E] bg-[#FFFDF0] p-4 space-y-3">
       <h3 className="font-bold text-[#2F6B3F]">수집 원문 및 편집본 반영</h3>
       <p className="text-xs text-stone-600">
-        추출 결과를 확인해 필요한 일정만 추가하거나 교체하세요. 이 버튼은 화면의
-        편집본만 바꿉니다. 하단 저장 전까지 공개 일정은 변경되지 않습니다.
+        자동 수집 결과는 공개 데이터에 먼저 반영됩니다. 아래 원문과 근거를
+        확인한 뒤 잘못된 항목만 수정하고 하단 저장 버튼을 눌러 보정하세요.
       </p>
       <div className="flex flex-wrap gap-2">
         <Input

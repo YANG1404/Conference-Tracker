@@ -7,7 +7,8 @@
 - CCF synchronization reads the upstream HTTPS aggregate and matches DBLP keys first, then exact normalized acronyms. Unmatched records are reported, not silently added to the catalog.
 - Collection covers the previous year through current year + 2. It processes at most 100 editions per request. Reinvoke while `next_cursor` is non-null.
 - CCF and Gemini snapshots live in `schedule_feeds`, separate from `milestones`. Existing public records and administrator edits are not overwritten.
-- Untouched seed records identified by exact original IDs/timestamps are moved to DRAFT during initial sync. No data or pins are deleted. Administrator-edited KSC is retained.
+- Matched CCF editions are published immediately with the available location, ACM CCS field, official link, conference period, and submission deadlines. Existing HIDDEN records and non-empty administrator corrections are retained.
+- Official-page enrichment fills only missing or source-placeholder metadata and adds evidenced schedules and links. Administrators can correct the published result in place.
 - Open a conference editor to inspect evidence and add or replace individual schedules. Saving PUBLISHED makes those edits visible; no approval/rejection queue is used.
 - Venue/date strings from CCF are shown as source evidence, not automatically guessed country/format values. Unknown values use ZZ/UNKNOWN until edited.
 
@@ -30,7 +31,7 @@ The primary model is set with GEMINI_MODEL. For temporary HTTP 503 congestion, o
 
 ## Scheduling
 
-The Worker exports a scheduled handler, with a six-hour cron in vite.config.ts. CCF resumes incomplete batches at the next tick and refreshes completed imports after 24 hours. Enabled official targets refresh after 72 hours, with at most three targets per invocation, ordered by pin count. Unchanged HTML skips Gemini.
+The Worker exports a scheduled handler, with a six-hour cron in vite.config.ts. CCF resumes incomplete batches at the next tick and refreshes completed imports after 24 hours. Official targets are enabled automatically and refresh after 72 hours, with at most three targets per invocation, ordered by pin count. Unchanged HTML skips Gemini while re-applying its validated snapshot when needed.
 
 Cron activation depends on the hosting platform applying Worker triggers; a successful deployment alone is not proof that a cron fired. The same job can be called by an external scheduler:
 

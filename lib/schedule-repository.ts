@@ -80,6 +80,131 @@ async function storeSnapshot(
     .bind(JSON.stringify(payload), hash, new Date().toISOString(), id)
     .run();
 }
+
+function snapshotStatements(
+  conferenceId: number,
+  snapshot: Snapshot,
+  sourceKind: 'CCF' | 'OFFICIAL_GEMINI',
+  identity?: { name: string; acronym: string; editionYear: number },
+) {
+  const statements: D1PreparedStatement[] = [];
+  const description = snapshot.description?.trim() || null;
+  const country = snapshot.country_code || 'ZZ';
+  const city = snapshot.city?.trim() || null;
+  const venue = snapshot.venue?.trim() || null;
+  const format = snapshot.format || 'UNKNOWN';
+  statements.push(
+    db()
+      .prepare(`
+        UPDATE conferences SET
+          name=COALESCE(?,name), acronym=COALESCE(?,acronym), edition_year=COALESCE(?,edition_year),
+          description=CASE
+            WHEN ?='OFFICIAL_GEMINI' AND (description IS NULL OR trim(description)='' OR description=name) THEN COALESCE(?,description)
+            WHEN description IS NULL OR trim(description)='' THEN COALESCE(?,description)
+            ELSE description END,
+          country_code=CASE WHEN country_code='ZZ' AND ?!='ZZ' THEN ? ELSE country_code END,
+          city=CASE WHEN city IS NULL OR trim(city)='' THEN COALESCE(?,city) ELSE city END,
+          venue=CASE WHEN venue IS NULL OR trim(venue)='' THEN COALESCE(?,venue) ELSE venue END,
+          format=CASE WHEN format='UNKNOWN' AND ?!='UNKNOWN' THEN ? ELSE format END,
+          status=CASE WHEN status='HIDDEN' THEN 'HIDDEN' ELSE 'PUBLISHED' END,
+          last_verified_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP
+        WHERE id=?
+      `)
+      .bind(
+        identity?.name ?? null,
+        identity?.acronym ?? null,
+        identity?.editionYear ?? null,
+        sourceKind,
+        description,
+        description,
+        country,
+        country,
+        city,
+        venue,
+        format,
+        format,
+        conferenceId,
+      ),
+  );
+  for (const [index, code] of (snapshot.research_field_codes || []).entries()) {
+    statements.push(
+      db()
+        .prepare(`
+          INSERT OR IGNORE INTO conference_research_fields(conference_id,research_field_id,is_primary)
+          SELECT ?,id,CASE WHEN ?=0 AND NOT EXISTS(
+            SELECT 1 FROM conference_research_fields WHERE conference_id=? AND is_primary=1
+          ) THEN 1 ELSE 0 END
+          FROM research_fields WHERE acm_ccs_code=? AND is_active=1
+        `)
+        .bind(conferenceId, index, conferenceId, code),
+    );
+  }
+  for (const link of snapshot.links || []) {
+    if (!/^https?:\/\//i.test(link.url)) continue;
+    statements.push(
+      db()
+        .prepare(
+          'INSERT OR IGNORE INTO conference_links(conference_id,type,label,url,is_active) VALUES (?,?,?,?,1)',
+        )
+        .bind(conferenceId, link.type, link.label, link.url),
+    );
+  }
+  for (const milestone of snapshot.milestones) {
+    if (sourceKind === 'OFFICIAL_GEMINI') {
+      statements.push(
+        db()
+          .prepare(
+            "DELETE FROM milestones WHERE conference_id=? AND source_kind='CCF' AND event_at=? AND external_key NOT LIKE '%conference_dates'",
+          )
+          .bind(conferenceId, milestone.event_at),
+      );
+    }
+    statements.push(
+      db()
+        .prepare(`
+          INSERT INTO milestones(
+            conference_id,type,group_name,title,event_at,end_at,original_timezone,
+            time_confirmed,source_url,source_text,source_kind,external_key
+          ) SELECT ?,'OFFICIAL_DATE',?,?,?,?,?,?,?,?,?,?
+          WHERE NOT EXISTS(
+            SELECT 1 FROM milestones WHERE conference_id=? AND external_key=?
+          )
+        `)
+        .bind(
+          conferenceId,
+          milestone.group_name || null,
+          milestone.title,
+          milestone.event_at,
+          milestone.end_at,
+          milestone.original_timezone,
+          milestone.time_confirmed ? 1 : 0,
+          milestone.source_url,
+          milestone.source_text,
+          milestone.source_kind,
+          milestone.external_key,
+          conferenceId,
+          milestone.external_key,
+        ),
+    );
+  }
+  return statements;
+}
+
+async function applySnapshot(
+  conferenceId: number,
+  snapshot: Snapshot,
+  sourceKind: 'CCF' | 'OFFICIAL_GEMINI',
+  identity?: { name: string; acronym: string; editionYear: number },
+) {
+  const statements = snapshotStatements(
+    conferenceId,
+    snapshot,
+    sourceKind,
+    identity,
+  );
+  for (let index = 0; index < statements.length; index += 50)
+    await db().batch(statements.slice(index, index + 50));
+}
 export async function configureOfficial(
   conferenceId: number,
   url: string,
@@ -140,6 +265,10 @@ export async function syncCcf() {
       catalog.map((row) => [canonicalKey(row.acronym), row]),
     );
     const previous = feed.payload ? JSON.parse(feed.payload) : {};
+    if (previous.policy !== 'AUTO_PUBLISH_REVIEWABLE_V1')
+      await db()
+        .prepare("UPDATE schedule_feeds SET enabled=1 WHERE kind='OFFICIAL'")
+        .run();
     const cursor =
       feed.content_hash === hash ? Number(previous.next_cursor || 0) : 0;
     let visited = 0;
@@ -197,14 +326,9 @@ export async function syncCcf() {
           if (!c)
             c = await db()
               .prepare(
-                "INSERT INTO conferences(series_id,name,acronym,edition_year,country_code,format,status) VALUES (?,?,?,?, 'ZZ','UNKNOWN','DRAFT') RETURNING id",
+                "INSERT INTO conferences(series_id,name,acronym,edition_year,country_code,format,status) VALUES (?,?,?,?, 'ZZ','UNKNOWN','PUBLISHED') RETURNING id",
               )
-              .bind(
-                series.id,
-                series.name,
-                series.acronym + ' ' + conf.year,
-                conf.year,
-              )
+              .bind(series.id, series.name, series.acronym, conf.year)
               .first<{ id: number }>();
           if (!c) throw new Error('학회 저장 실패');
           if (!existing.some((row) => row.id === c!.id))
@@ -212,9 +336,16 @@ export async function syncCcf() {
               id: c.id,
               series_id: series.id,
               edition_year: conf.year,
-              acronym: series.acronym + ' ' + conf.year,
+              acronym: series.acronym,
             });
           const snapshot = ccfSnapshot(item, conf);
+          pending.push(
+            ...snapshotStatements(c.id, snapshot, 'CCF', {
+              name: series.name,
+              acronym: series.acronym,
+              editionYear: conf.year,
+            }),
+          );
           const key = 'ccf:' + conf.id;
           pending.push(
             db()
@@ -231,15 +362,17 @@ export async function syncCcf() {
                 new Date().toISOString(),
               ),
           );
-          // Explicit admin selection controls paid Gemini work. Suggested URLs are not auto-enabled.
+          // Official enrichment is automatic; Admin can disable individual feeds afterwards.
           try {
-            safeUrl(conf.link);
+            const officialUrl = safeUrl(
+              conf.link.replace(/^http:\/\//i, 'https://'),
+            );
             pending.push(
               db()
                 .prepare(
-                  "INSERT OR IGNORE INTO schedule_feeds(source_key,conference_id,kind,url,enabled) VALUES (?,?,'OFFICIAL',?,0)",
+                  "INSERT INTO schedule_feeds(source_key,conference_id,kind,url,enabled) VALUES (?,?,'OFFICIAL',?,1) ON CONFLICT(source_key) DO UPDATE SET url=excluded.url",
                 )
-                .bind('official:' + c.id, c.id, conf.link),
+                .bind('official:' + c.id, c.id, officialUrl),
             );
           } catch {
             snapshot.warnings.push('공식 HTTPS URL 수동 지정 필요');
@@ -269,7 +402,7 @@ export async function syncCcf() {
       catalog_series: catalog.length,
       unmatched,
       errors,
-      policy: 'DRAFT_ONLY',
+      policy: 'AUTO_PUBLISH_REVIEWABLE_V1',
       year_from: year - 1,
       year_to: year + 2,
     };
@@ -348,6 +481,10 @@ export async function collectOfficial(feedId: number) {
     }
     const hash = await hashText(JSON.stringify(documents));
     if (feed.content_hash === hash) {
+      if (feed.payload) {
+        const previous = JSON.parse(feed.payload) as Snapshot;
+        await applySnapshot(feed.conference_id, previous, 'OFFICIAL_GEMINI');
+      }
       await finish(feed.id, 'UNCHANGED', 72);
       return { unchanged: true };
     }
@@ -359,11 +496,16 @@ export async function collectOfficial(feedId: number) {
       documents,
     );
     snapshot.official_url = home.url;
+    snapshot.links = [
+      { type: 'OFFICIAL', label: '공식 홈페이지', url: home.url },
+      ...(snapshot.links || []),
+    ];
     if (!snapshot.milestones.length)
       snapshot.warnings.push(
         '확인 가능한 일정이 없습니다. Important Dates 페이지를 직접 지정하세요.',
       );
     await storeSnapshot(feed.id, snapshot, hash);
+    await applySnapshot(feed.conference_id, snapshot, 'OFFICIAL_GEMINI');
     await finish(feed.id, snapshot.milestones.length ? 'READY' : 'EMPTY', 72);
     return snapshot;
   } catch (cause) {
