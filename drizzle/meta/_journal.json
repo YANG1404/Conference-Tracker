@@ -15,6 +15,13 @@
       "when": 1788870027355,
       "tag": "0001_white_ultron",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1788922896924,
+      "tag": "0002_secret_hercules",
+      "breakpoints": true
     }
   ]
 }

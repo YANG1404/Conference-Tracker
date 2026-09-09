@@ -1,22 +1,17 @@
-import { getChatGPTUser } from './chatgpt-auth';
 import { ConferenceWorkspace } from './conference-workspace';
-import { requireAdmin } from '@/lib/conference-repository';
+import { getPageSessionUser, isAdminUser } from '@/lib/google-auth';
+
+export const dynamic = 'force-dynamic';
 
 export default async function Home() {
-  const user = await getChatGPTUser();
-  const isAdmin = user
-    ? Boolean(
-        await requireAdmin({
-          externalUserId: user.userId,
-          email: user.email,
-        }),
-      )
-    : false;
+  const user = await getPageSessionUser();
 
   return (
     <ConferenceWorkspace
       userName={user?.displayName ?? null}
-      isAdmin={isAdmin}
+      userEmail={user?.email ?? null}
+      isAuthenticated={Boolean(user)}
+      isAdmin={isAdminUser(user)}
     />
   );
 }

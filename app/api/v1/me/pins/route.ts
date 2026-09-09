@@ -1,8 +1,12 @@
 import { error, json } from '@/lib/api';
-import { listPins, readAuthenticatedUser } from '@/lib/conference-repository';
+import { listPins } from '@/lib/conference-repository';
+import { getSessionUser } from '@/lib/google-auth';
 
 export async function GET(request: Request) {
-  const user = readAuthenticatedUser(request.headers);
+  const session = await getSessionUser(request);
+  const user = session
+    ? { externalUserId: session.externalUserId, email: session.email }
+    : null;
   if (!user) return error(401, 'UNAUTHORIZED', '로그인이 필요합니다.');
   try {
     const pins = await listPins(user);

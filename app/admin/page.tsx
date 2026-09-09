@@ -1,10 +1,11 @@
-import { chatGPTSignInPath, getChatGPTUser } from '../chatgpt-auth';
 import { AdminWorkspace } from './workspace';
-import { requireAdmin } from '@/lib/conference-repository';
+import { getPageSessionUser, isAdminUser } from '@/lib/google-auth';
 import Link from 'next/link';
 
+export const dynamic = 'force-dynamic';
+
 export default async function AdminPage() {
-  const user = await getChatGPTUser();
+  const user = await getPageSessionUser();
   if (!user) {
     return (
       <main className="grid min-h-screen place-items-center bg-[#FFFDF2] px-5 text-[#203126]">
@@ -16,22 +17,18 @@ export default async function AdminPage() {
             학회 정보와 공식 일정 편집 기능은 허용된 관리자만 사용할 수
             있습니다.
           </p>
-          <a
-            href={chatGPTSignInPath('/admin')}
+          <Link
+            href="/login"
             className="mt-6 inline-flex h-11 items-center justify-center rounded-xl bg-[#2F6B3F] px-5 font-bold text-white"
           >
-            ChatGPT로 로그인
-          </a>
+            Google로 로그인
+          </Link>
         </div>
       </main>
     );
   }
 
-  const admin = await requireAdmin({
-    externalUserId: user.userId,
-    email: user.email,
-  });
-  if (!admin) {
+  if (!isAdminUser(user)) {
     return (
       <main className="grid min-h-screen place-items-center bg-[#FFFDF2] px-5 text-[#203126]">
         <div className="max-w-md rounded-3xl border border-[#2F6B3F]/12 bg-white p-8 text-center shadow-xl">

@@ -15,6 +15,9 @@ export const users = sqliteTable(
     id: integer('id').primaryKey({ autoIncrement: true }),
     externalUserId: text('external_user_id').notNull(),
     email: text('email').notNull(),
+    displayName: text('display_name'),
+    profileImageUrl: text('profile_image_url'),
+    authProvider: text('auth_provider'),
     role: text('role', { enum: ['MEMBER', 'ADMIN'] })
       .notNull()
       .default('MEMBER'),
@@ -31,6 +34,23 @@ export const users = sqliteTable(
   (table) => [
     uniqueIndex('uq_users_external_user_id').on(table.externalUserId),
     uniqueIndex('uq_users_email').on(table.email),
+  ],
+);
+
+export const userSessions = sqliteTable(
+  'user_sessions',
+  {
+    token: text('token').primaryKey(),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    expiresAt: text('expires_at').notNull(),
+    createdAt: text('created_at')
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    index('idx_user_sessions_user').on(table.userId, table.expiresAt),
   ],
 );
 
@@ -134,6 +154,25 @@ export const conferenceResearchFields = sqliteTable(
   (table) => [
     primaryKey({ columns: [table.conferenceId, table.researchFieldId] }),
     index('idx_conference_field_filter').on(table.researchFieldId),
+  ],
+);
+
+export const userResearchFields = sqliteTable(
+  'user_research_fields',
+  {
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    researchFieldId: integer('research_field_id')
+      .notNull()
+      .references(() => researchFields.id),
+    isPrimary: integer('is_primary', { mode: 'boolean' })
+      .notNull()
+      .default(false),
+  },
+  (table) => [
+    primaryKey({ columns: [table.userId, table.researchFieldId] }),
+    index('idx_user_research_fields_field').on(table.researchFieldId),
   ],
 );
 
@@ -307,3 +346,43 @@ export const conferenceSources = sqliteTable(
     ),
   ],
 );
+
+export const conferenceCatalogEntries = sqliteTable(
+  'conference_catalog_entries',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    sourceRow: integer('source_row').notNull(),
+    acronym: text('acronym').notNull(),
+    canonicalAcronym: text('canonical_acronym').notNull(),
+    name: text('name').notNull(),
+    dblpKey: text('dblp_key').notNull(),
+    ksiGrade: text('ksi_grade'),
+    bk21If: text('bk21_if'),
+    kaistRecognized: integer('kaist_recognized', { mode: 'boolean' })
+      .notNull()
+      .default(false),
+    snuRecognized: integer('snu_recognized', { mode: 'boolean' })
+      .notNull()
+      .default(false),
+    postechGrade: text('postech_grade'),
+    normalizedScore: text('normalized_score'),
+    isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+    syncedAt: text('synced_at')
+      .notNull()
+      .default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex('uq_conference_catalog_source_row').on(table.sourceRow),
+    index('idx_conference_catalog_canonical').on(table.canonicalAcronym),
+    index('idx_conference_catalog_dblp').on(table.dblpKey),
+  ],
+);
+
+export const catalogSyncState = sqliteTable('catalog_sync_state', {
+  id: integer('id').primaryKey(),
+  sourceUrl: text('source_url').notNull(),
+  status: text('status').notNull(),
+  rowCount: integer('row_count').notNull().default(0),
+  lastSyncedAt: text('last_synced_at'),
+  errorMessage: text('error_message'),
+});

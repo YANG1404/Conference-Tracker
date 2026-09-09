@@ -1,16 +1,16 @@
 import { error, json } from '@/lib/api';
 import {
   getAdminConference,
-  readAuthenticatedUser,
   requireAdmin,
   updateConference,
   type ConferenceInput,
 } from '@/lib/conference-repository';
+import { getRepositoryUser } from '@/lib/google-auth';
 
 type RouteContext = { params: Promise<{ conference_id: string }> };
 
 export async function GET(request: Request, context: RouteContext) {
-  const user = readAuthenticatedUser(request.headers);
+  const user = await getRepositoryUser(request);
   if (!user) return error(401, 'UNAUTHORIZED', '로그인이 필요합니다.');
   if (!(await requireAdmin(user)))
     return error(403, 'FORBIDDEN', '관리자 권한이 필요합니다.');
@@ -21,7 +21,7 @@ export async function GET(request: Request, context: RouteContext) {
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
-  const user = readAuthenticatedUser(request.headers);
+  const user = await getRepositoryUser(request);
   if (!user) return error(401, 'UNAUTHORIZED', '로그인이 필요합니다.');
   const body = (await request
     .json()

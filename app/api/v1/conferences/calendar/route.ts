@@ -1,6 +1,6 @@
 import { error, json } from '@/lib/api';
-import { readAuthenticatedUser } from '@/lib/conference-repository';
 import { getConferenceViews } from '@/lib/conference-service';
+import { getRepositoryUser } from '@/lib/google-auth';
 
 export async function GET(request: Request) {
   try {
@@ -10,7 +10,7 @@ export async function GET(request: Request) {
     if (!from || !to || from > to)
       return error(400, 'INVALID_PARAMETER', '올바른 조회 기간이 필요합니다.');
     const conferences = await getConferenceViews(
-      readAuthenticatedUser(request.headers),
+      await getRepositoryUser(request),
     );
     const events = conferences.flatMap((conference) =>
       conference.milestones

@@ -1,14 +1,14 @@
 import { error, json } from '@/lib/api';
 import {
-  readAuthenticatedUser,
   updateSourceSite,
   type SourceSiteInput,
 } from '@/lib/conference-repository';
+import { getRepositoryUser } from '@/lib/google-auth';
 
 type RouteContext = { params: Promise<{ source_site_id: string }> };
 
 export async function PATCH(request: Request, context: RouteContext) {
-  const user = readAuthenticatedUser(request.headers);
+  const user = await getRepositoryUser(request);
   if (!user) return error(401, 'UNAUTHORIZED', '로그인이 필요합니다.');
   const body = (await request
     .json()

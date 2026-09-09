@@ -13,6 +13,8 @@ import {
   Filter,
   LayoutGrid,
   List,
+  LogIn,
+  LogOut,
   MapPin,
   Search,
   ShieldCheck,
@@ -23,6 +25,14 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -364,9 +374,13 @@ function EventPill({
 
 export function ConferenceWorkspace({
   userName,
+  userEmail,
+  isAuthenticated,
   isAdmin,
 }: {
   userName: string | null;
+  userEmail: string | null;
+  isAuthenticated: boolean;
   isAdmin: boolean;
 }) {
   const [conferenceItems, setConferenceItems] =
@@ -382,6 +396,7 @@ export function ConferenceWorkspace({
   );
   const [view, setView] = useState<'calendar' | 'list'>('calendar');
   const [mobileFilters, setMobileFilters] = useState(false);
+  const [loginPromptOpen, setLoginPromptOpen] = useState(false);
   const currentCalendarDay = Number(
     new Intl.DateTimeFormat('en-US', {
       timeZone: 'Asia/Seoul',
@@ -500,23 +515,29 @@ export function ConferenceWorkspace({
       })
       .catch(() => undefined);
 
-    fetch('/api/v1/me/pins')
-      .then(async (response) =>
-        response.ok
-          ? ((await response.json()) as {
-              items: Array<{ conference_id: number }>;
-            })
-          : null,
-      )
-      .then(
-        (data) =>
-          data?.items &&
-          setPinnedIds(data.items.map((pin) => pin.conference_id)),
-      )
-      .catch(() => undefined);
-  }, []);
+    if (isAuthenticated) {
+      fetch('/api/v1/me/pins')
+        .then(async (response) =>
+          response.ok
+            ? ((await response.json()) as {
+                items: Array<{ conference_id: number }>;
+              })
+            : null,
+        )
+        .then(
+          (data) =>
+            data?.items &&
+            setPinnedIds(data.items.map((pin) => pin.conference_id)),
+        )
+        .catch(() => undefined);
+    }
+  }, [isAuthenticated]);
 
   const togglePin = async (id: number) => {
+    if (!isAuthenticated) {
+      setLoginPromptOpen(true);
+      return;
+    }
     const isPinned = pinnedIds.includes(id);
     setPinnedIds((current) =>
       isPinned ? current.filter((item) => item !== id) : [...current, id],
@@ -552,6 +573,10 @@ export function ConferenceWorkspace({
           },
           annotations: { readOnlyHint: false, untrustedContentHint: false },
           async execute(input) {
+            if (!isAuthenticated)
+              throw new Error(
+                '관심 학회를 저장하려면 Google 로그인이 필요합니다.',
+              );
             if (!input || typeof input !== 'object')
               throw new Error('입력 형식이 올바르지 않습니다.');
             const { conference_id, pinned } = input as {
@@ -581,7 +606,7 @@ export function ConferenceWorkspace({
       ),
     ).catch(() => undefined);
     return () => lifecycle.abort();
-  }, []);
+  }, [isAuthenticated]);
 
   const resetFilters = () => {
     setQuery('');
@@ -628,10 +653,10 @@ export function ConferenceWorkspace({
               }
             >
               <span className="grid size-8 shrink-0 place-items-center rounded-full bg-[#7FB77E] text-sm font-bold text-white">
-                {(userName ?? 'CT').slice(0, 1).toUpperCase()}
+                {(userName ?? 'G').slice(0, 1).toUpperCase()}
               </span>
               <span className="hidden max-w-40 truncate text-sm font-semibold sm:block">
-                {userName ?? '데모 사용자'}
+                {userName ?? '로그인'}
               </span>
               <ChevronDown className="size-3.5 text-[#627066]" />
             </DropdownMenuTrigger>
@@ -642,12 +667,31 @@ export function ConferenceWorkspace({
             >
               <DropdownMenuLabel className="px-2 py-2">
                 <span className="block truncate text-sm font-bold text-[#294432]">
-                  {userName ?? '데모 사용자'}
+                  {userName ?? '비회원으로 이용 중'}
                 </span>
                 <span className="mt-0.5 block text-xs font-normal text-[#748078]">
-                  {isAdmin ? '관리자 계정' : '일반 사용자'}
+                  {isAuthenticated
+                    ? userEmail
+                    : '학회 검색과 일정 확인이 가능합니다.'}
                 </span>
               </DropdownMenuLabel>
+              {!isAuthenticated && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    render={
+                      <button
+                        type="button"
+                        aria-label="Google 로그인 페이지 열기"
+                        onClick={() => window.location.assign('/login')}
+                      />
+                    }
+                    className="px-2.5 py-2.5 font-semibold text-[#294432] focus:bg-[#7FB77E]/15"
+                  >
+                    <LogIn className="text-[#2F6B3F]" /> Google로 로그인
+                  </DropdownMenuItem>
+                </>
+              )}
               {isAdmin && (
                 <>
                   <DropdownMenuSeparator />
@@ -662,6 +706,26 @@ export function ConferenceWorkspace({
                     className="px-2.5 py-2.5 font-semibold text-[#294432] focus:bg-[#7FB77E]/15"
                   >
                     <ShieldCheck className="text-[#2F6B3F]" /> 관리자 페이지
+                  </DropdownMenuItem>
+                </>
+              )}
+              {isAuthenticated && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    render={
+                      <button
+                        type="button"
+                        aria-label="로그아웃"
+                        onClick={async () => {
+                          await fetch('/api/auth/logout', { method: 'POST' });
+                          window.location.assign('/');
+                        }}
+                      />
+                    }
+                    className="px-2.5 py-2.5 font-semibold text-[#6B3F34] focus:bg-[#F7C85C]/15"
+                  >
+                    <LogOut /> 로그아웃
                   </DropdownMenuItem>
                 </>
               )}
@@ -878,7 +942,13 @@ export function ConferenceWorkspace({
                   <Button
                     variant={pinnedOnly ? 'default' : 'outline'}
                     className={`h-8 gap-2 ${pinnedOnly ? 'bg-[#2F6B3F] text-white' : 'border-[#2F6B3F]/15 bg-white text-[#405047]'}`}
-                    onClick={() => setPinnedOnly(!pinnedOnly)}
+                    onClick={() => {
+                      if (!isAuthenticated) {
+                        setLoginPromptOpen(true);
+                        return;
+                      }
+                      setPinnedOnly(!pinnedOnly);
+                    }}
                   >
                     <Bookmark className="size-3.5" /> 관심 학회만
                   </Button>
@@ -1017,6 +1087,39 @@ export function ConferenceWorkspace({
           </section>
         </main>
       </div>
+
+      <Dialog open={loginPromptOpen} onOpenChange={setLoginPromptOpen}>
+        <DialogContent className="border-[#2F6B3F]/14 bg-[#FFFDF7] p-6 sm:max-w-md">
+          <DialogHeader>
+            <div className="mb-1 grid size-10 place-items-center rounded-xl bg-[#7FB77E]/18 text-[#2F6B3F]">
+              <Bookmark className="size-5" />
+            </div>
+            <DialogTitle className="text-xl font-black text-[#204F31]">
+              Google 로그인이 필요합니다
+            </DialogTitle>
+            <DialogDescription className="leading-6 text-[#68746B]">
+              관심 학회를 저장하고 관리하려면 로그인해 주세요. 학회 검색과 일정
+              확인은 로그인 없이 계속 이용할 수 있습니다.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="border-[#2F6B3F]/10 bg-[#FFF9DA]/45">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setLoginPromptOpen(false)}
+            >
+              취소
+            </Button>
+            <Button
+              type="button"
+              className="bg-[#2F6B3F] text-white hover:bg-[#245632]"
+              onClick={() => window.location.assign('/login')}
+            >
+              <LogIn /> Google로 로그인
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Sheet
         open={selected !== null}
