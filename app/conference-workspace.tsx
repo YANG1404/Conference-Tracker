@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
-  Bell,
   Bookmark,
   BookmarkCheck,
   CalendarDays,
@@ -16,10 +15,8 @@ import {
   LayoutGrid,
   List,
   MapPin,
-  Menu,
   Search,
-  Settings2,
-  Sparkles,
+  ShieldCheck,
   Users,
   X,
 } from 'lucide-react';
@@ -27,6 +24,14 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   NativeSelect,
   NativeSelectOption,
@@ -358,7 +363,13 @@ function EventPill({
   );
 }
 
-export function ConferenceWorkspace({ userName }: { userName: string | null }) {
+export function ConferenceWorkspace({
+  userName,
+  isAdmin,
+}: {
+  userName: string | null;
+  isAdmin: boolean;
+}) {
   const [conferenceItems, setConferenceItems] =
     useState<Conference[]>(demoConferences);
   const [query, setQuery] = useState('');
@@ -606,74 +617,60 @@ export function ConferenceWorkspace({ userName }: { userName: string | null }) {
               </p>
             </div>
           </div>
-          <Button
-            variant="ghost"
-            size="icon-lg"
-            aria-label="알림"
-            className="ml-auto text-[#2F6B3F]"
-          >
-            <Bell />
-          </Button>
-          <div className="hidden items-center gap-2 rounded-full border border-[#2F6B3F]/12 bg-white py-1.5 pl-1.5 pr-3 sm:flex">
-            <div className="grid size-8 place-items-center rounded-full bg-[#7FB77E] text-sm font-bold text-white">
-              {(userName ?? 'CT').slice(0, 1).toUpperCase()}
-            </div>
-            <span className="max-w-32 truncate text-sm font-semibold">
-              {userName ?? '데모 사용자'}
-            </span>
-          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="ml-auto h-11 rounded-full border-[#2F6B3F]/12 bg-white py-1.5 pl-1.5 pr-2 shadow-none hover:bg-[#F5FAF2] sm:pr-3"
+                  aria-label="계정 메뉴 열기"
+                />
+              }
+            >
+              <span className="grid size-8 shrink-0 place-items-center rounded-full bg-[#7FB77E] text-sm font-bold text-white">
+                {(userName ?? 'CT').slice(0, 1).toUpperCase()}
+              </span>
+              <span className="hidden max-w-40 truncate text-sm font-semibold sm:block">
+                {userName ?? '데모 사용자'}
+              </span>
+              <ChevronDown className="size-3.5 text-[#627066]" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              sideOffset={8}
+              className="w-64 border border-[#2F6B3F]/12 bg-[#FFFDF7] p-2"
+            >
+              <DropdownMenuLabel className="px-2 py-2">
+                <span className="block truncate text-sm font-bold text-[#294432]">
+                  {userName ?? '데모 사용자'}
+                </span>
+                <span className="mt-0.5 block text-xs font-normal text-[#748078]">
+                  {isAdmin ? '관리자 계정' : '일반 사용자'}
+                </span>
+              </DropdownMenuLabel>
+              {isAdmin && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    render={<Link href="/admin" />}
+                    className="px-2.5 py-2.5 font-semibold text-[#294432] focus:bg-[#7FB77E]/15"
+                  >
+                    <ShieldCheck className="text-[#2F6B3F]" /> 관리자 페이지
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-[1600px] lg:grid-cols-[13.5rem_minmax(0,1fr)]">
-        <aside className="sticky top-[4.5rem] hidden h-[calc(100vh-4.5rem)] border-r border-[#2F6B3F]/10 bg-[#FFF9D8]/45 p-5 lg:flex lg:flex-col">
-          <nav aria-label="주 메뉴" className="space-y-1.5">
-            <a
-              href="#calendar"
-              className="flex items-center gap-3 rounded-xl bg-[#2F6B3F] px-3 py-3 text-sm font-bold text-white shadow-sm"
-            >
-              <CalendarDays className="size-[1.1rem]" /> 일정 캘린더
-            </a>
-            <button
-              type="button"
-              onClick={() => setPinnedOnly(!pinnedOnly)}
-              className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold text-[#526056] transition hover:bg-[#7FB77E]/14 hover:text-[#2F6B3F]"
-            >
-              <Bookmark className="size-[1.1rem]" /> 관심 학회
-              <span className="ml-auto rounded-full bg-[#F7C85C] px-2 py-0.5 text-xs font-bold text-[#4C3B12]">
-                {pinnedIds.length}
-              </span>
-            </button>
-            <a
-              href="#fields"
-              className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold text-[#526056] transition hover:bg-[#7FB77E]/14 hover:text-[#2F6B3F]"
-            >
-              <LayoutGrid className="size-[1.1rem]" /> 분야 둘러보기
-            </a>
-          </nav>
-          <div className="mt-8 rounded-2xl border border-[#E7BC51]/35 bg-[#FFF6C0] p-4">
-            <div className="mb-3 grid size-9 place-items-center rounded-xl bg-[#F7C85C] text-[#5B4615]">
-              <Sparkles className="size-4" />
-            </div>
-            <p className="text-sm font-bold">다가오는 마감</p>
-            <p className="mt-1 text-xs leading-5 text-[#657067]">
-              핀한 학회 {pinnedIds.length}개의 주요 일정을 빠르게 모아볼 수
-              있습니다.
-            </p>
-          </div>
-          <Link
-            href="/admin"
-            className="mt-auto flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold text-[#526056] transition hover:bg-[#7FB77E]/14 hover:text-[#2F6B3F]"
-          >
-            <Settings2 className="size-[1.1rem]" /> 관리자 페이지
-          </Link>
-        </aside>
-
+      <div className="mx-auto max-w-[1600px]">
         <main
           id="calendar"
-          className="min-w-0 px-4 py-6 pb-24 sm:px-6 lg:px-8 lg:py-8"
+          className="min-w-0 px-4 py-6 pb-10 sm:px-6 lg:px-8 lg:py-8"
         >
-          <section className="mx-auto max-w-[1320px]">
+          <section className="mx-auto max-w-[1500px]">
             <div className="flex flex-col justify-between gap-5 xl:flex-row xl:items-end">
               <div>
                 <div className="mb-2 flex items-center gap-2">
@@ -1015,28 +1012,6 @@ export function ConferenceWorkspace({ userName }: { userName: string | null }) {
           </section>
         </main>
       </div>
-
-      <nav className="fixed inset-x-3 bottom-3 z-40 flex items-center justify-around rounded-2xl border border-[#2F6B3F]/12 bg-white/95 p-2 shadow-[0_18px_45px_rgba(29,68,41,0.2)] backdrop-blur lg:hidden">
-        <button
-          type="button"
-          className="flex flex-col items-center gap-1 px-4 py-1 text-xs font-bold text-[#2F6B3F]"
-        >
-          <CalendarDays className="size-5" /> 캘린더
-        </button>
-        <button
-          type="button"
-          onClick={() => setPinnedOnly(!pinnedOnly)}
-          className="flex flex-col items-center gap-1 px-4 py-1 text-xs font-semibold text-[#778078]"
-        >
-          <Bookmark className="size-5" /> 관심 학회
-        </button>
-        <Link
-          href="/admin"
-          className="flex flex-col items-center gap-1 px-4 py-1 text-xs font-semibold text-[#778078]"
-        >
-          <Menu className="size-5" /> 관리
-        </Link>
-      </nav>
 
       <Sheet
         open={selected !== null}

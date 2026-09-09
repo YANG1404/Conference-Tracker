@@ -568,6 +568,7 @@ export async function ensureUser(user: AuthenticatedUser) {
 
 export async function requireAdmin(user: AuthenticatedUser) {
   const current = await ensureUser(user);
+  if (current.status !== 'ACTIVE') return null;
   const allowlist = (env.CONFERENCE_TRACKER_ADMIN_EMAILS ?? '')
     .split(',')
     .map((email) => email.trim().toLowerCase())
