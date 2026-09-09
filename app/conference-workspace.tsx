@@ -36,6 +36,7 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -665,16 +666,18 @@ export function ConferenceWorkspace({
               sideOffset={8}
               className="w-64 border border-[#2F6B3F]/12 bg-[#FFFDF7] p-2"
             >
-              <DropdownMenuLabel className="px-2 py-2">
-                <span className="block truncate text-sm font-bold text-[#294432]">
-                  {userName ?? '비회원으로 이용 중'}
-                </span>
-                <span className="mt-0.5 block text-xs font-normal text-[#748078]">
-                  {isAuthenticated
-                    ? userEmail
-                    : '학회 검색과 일정 확인이 가능합니다.'}
-                </span>
-              </DropdownMenuLabel>
+              <DropdownMenuGroup>
+                <DropdownMenuLabel className="px-2 py-2">
+                  <span className="block truncate text-sm font-bold text-[#294432]">
+                    {userName ?? '비회원으로 이용 중'}
+                  </span>
+                  <span className="mt-0.5 block text-xs font-normal text-[#748078]">
+                    {isAuthenticated
+                      ? userEmail
+                      : '학회 검색과 일정 확인이 가능합니다.'}
+                  </span>
+                </DropdownMenuLabel>
+              </DropdownMenuGroup>
               {!isAuthenticated && (
                 <>
                   <DropdownMenuSeparator />

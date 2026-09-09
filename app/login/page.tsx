@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { CalendarDays } from 'lucide-react';
 import { googleClientId, getPageSessionUser } from '@/lib/google-auth';
 import { GoogleSignIn } from './google-sign-in';
@@ -14,12 +13,14 @@ export default async function LoginPage() {
           <h1 className="text-2xl font-black text-[#204F31]">
             이미 로그인되어 있습니다
           </h1>
-          <Link
-            href="/"
-            className="mt-6 inline-flex h-11 items-center rounded-xl bg-[#2F6B3F] px-5 font-bold text-white"
-          >
-            캘린더로 돌아가기
-          </Link>
+          <form action="/" method="get">
+            <button
+              type="submit"
+              className="mt-6 inline-flex h-11 items-center rounded-xl bg-[#2F6B3F] px-5 font-bold text-white"
+            >
+              캘린더로 돌아가기
+            </button>
+          </form>
         </div>
       </main>
     );
@@ -40,12 +41,14 @@ export default async function LoginPage() {
         <div className="mt-7 flex justify-center">
           <GoogleSignIn clientId={googleClientId()} />
         </div>
-        <Link
-          href="/"
-          className="mt-6 block text-center text-sm font-bold text-[#2F6B3F] underline underline-offset-4"
-        >
-          로그인 없이 둘러보기
-        </Link>
+        <form action="/" method="get" className="mt-6 text-center">
+          <button
+            type="submit"
+            className="text-sm font-bold text-[#2F6B3F] underline underline-offset-4"
+          >
+            로그인 없이 둘러보기
+          </button>
+        </form>
       </section>
     </main>
   );

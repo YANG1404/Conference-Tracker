@@ -1,6 +1,5 @@
 import { AdminWorkspace } from './workspace';
 import { getPageSessionUser, isAdminUser } from '@/lib/google-auth';
-import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,12 +16,14 @@ export default async function AdminPage() {
             학회 정보와 공식 일정 편집 기능은 허용된 관리자만 사용할 수
             있습니다.
           </p>
-          <Link
-            href="/login"
-            className="mt-6 inline-flex h-11 items-center justify-center rounded-xl bg-[#2F6B3F] px-5 font-bold text-white"
-          >
-            Google로 로그인
-          </Link>
+          <form action="/login" method="get">
+            <button
+              type="submit"
+              className="mt-6 inline-flex h-11 items-center justify-center rounded-xl bg-[#2F6B3F] px-5 font-bold text-white"
+            >
+              Google로 로그인
+            </button>
+          </form>
         </div>
       </main>
     );
@@ -38,12 +39,14 @@ export default async function AdminPage() {
           <p className="mt-3 text-sm leading-6 text-[#68746B]">
             관리자 페이지는 허용된 관리자 계정으로만 이용할 수 있습니다.
           </p>
-          <Link
-            href="/"
-            className="mt-6 inline-flex h-11 items-center justify-center rounded-xl bg-[#2F6B3F] px-5 font-bold text-white"
-          >
-            캘린더로 돌아가기
-          </Link>
+          <form action="/" method="get">
+            <button
+              type="submit"
+              className="mt-6 inline-flex h-11 items-center justify-center rounded-xl bg-[#2F6B3F] px-5 font-bold text-white"
+            >
+              캘린더로 돌아가기
+            </button>
+          </form>
         </div>
       </main>
     );
