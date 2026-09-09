@@ -1,10 +1,31 @@
 'use client';
 
-import { type SyntheticEvent, useCallback, useEffect, useState } from 'react';
+import {
+  type SyntheticEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Check, Database, ExternalLink, FileCheck2, Globe2, Plus, RefreshCw, ShieldCheck, X } from 'lucide-react';
+import {
+  ArrowLeft,
+  CalendarDays,
+  Check,
+  Database,
+  Globe2,
+  Link2,
+  ListTree,
+  Pencil,
+  Plus,
+  RefreshCw,
+  ShieldCheck,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -14,79 +35,172 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from '@/components/ui/native-select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
-
-type Candidate = {
-  id: number;
-  extracted_name: string;
-  extracted_acronym: string;
-  extracted_organization: string;
-  extracted_country_code: string;
-  extracted_city: string;
-  extracted_format: string;
-  source_url: string;
-  review_status: string;
-};
 
 type AdminConference = {
   id: number;
   name: string;
-  acronym: string;
+  acronym: string | null;
+  edition_year: number | null;
+  description: string | null;
   country_code: string;
-  format: string;
-  status: string;
+  city: string | null;
+  venue: string | null;
+  format: 'ONSITE' | 'ONLINE' | 'HYBRID';
+  status: 'DRAFT' | 'PUBLISHED' | 'HIDDEN';
+  milestone_count: number;
+  next_milestone_at: string | null;
+  research_field_count: number;
 };
-
+type ResearchField = {
+  id: number;
+  acm_ccs_code: string;
+  name_ko: string;
+  name_en: string;
+  depth: number;
+};
 type SourceSite = {
   id: number;
   name: string;
   base_url: string;
-  source_type: string;
+  source_type: 'API' | 'RSS' | 'WEB_PAGE';
   is_active: number;
   last_collected_at: string | null;
 };
-
 type Stats = {
-  pending_candidates: number;
   published_conferences: number;
+  total_milestones: number;
   active_sources: number;
 };
+type MilestoneDraft = {
+  group_name: string;
+  title: string;
+  event_at: string;
+  original_timezone: string;
+  time_confirmed: boolean;
+};
+type LinkDraft = {
+  type: string;
+  label: string;
+  url: string;
+  is_active: boolean;
+};
+type ConferenceDraft = {
+  id: number | null;
+  name: string;
+  acronym: string;
+  edition_year: string;
+  description: string;
+  country_code: string;
+  city: string;
+  venue: string;
+  format: 'ONSITE' | 'ONLINE' | 'HYBRID';
+  status: 'DRAFT' | 'PUBLISHED' | 'HIDDEN';
+  research_field_ids: number[];
+  primary_research_field_id: number | null;
+  milestones: MilestoneDraft[];
+  links: LinkDraft[];
+};
+
+const emptyConference = (): ConferenceDraft => ({
+  id: null,
+  name: '',
+  acronym: '',
+  edition_year: `${new Date().getFullYear() + 1}`,
+  description: '',
+  country_code: '',
+  city: '',
+  venue: '',
+  format: 'ONSITE',
+  status: 'DRAFT',
+  research_field_ids: [],
+  primary_research_field_id: null,
+  milestones: [],
+  links: [],
+});
+
+function dateTimeLocal(value: unknown) {
+  return typeof value === 'string' ? value.slice(0, 16) : '';
+}
+function dDay(value: string | null) {
+  if (!value) return '일정 없음';
+  const target = Date.parse(value.slice(0, 10));
+  const today = new Date();
+  const start = Date.UTC(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate(),
+  );
+  const difference = Math.round((target - start) / 86_400_000);
+  if (difference === 0) return 'D-Day';
+  return difference > 0 ? `D-${difference}` : `D+${Math.abs(difference)}`;
+}
+function statusLabel(status: AdminConference['status']) {
+  return status === 'PUBLISHED'
+    ? '공개'
+    : status === 'HIDDEN'
+      ? '숨김'
+      : '임시 저장';
+}
 
 export function AdminWorkspace({ userName }: { userName: string }) {
   const [stats, setStats] = useState<Stats | null>(null);
-  const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [conferences, setConferences] = useState<AdminConference[]>([]);
   const [sources, setSources] = useState<SourceSite[]>([]);
+  const [fields, setFields] = useState<ResearchField[]>([]);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
-  const [rejecting, setRejecting] = useState<Candidate | null>(null);
-  const [rejectReason, setRejectReason] = useState('');
-  const [createOpen, setCreateOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [conferenceDraft, setConferenceDraft] =
+    useState<ConferenceDraft | null>(null);
+  const [sourceDraft, setSourceDraft] = useState<SourceSite | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setErrorMessage('');
     const responses = await Promise.all([
       fetch('/api/v1/admin/overview'),
-      fetch('/api/v1/admin/collection-candidates?review_status=PENDING'),
       fetch('/api/v1/admin/conferences'),
       fetch('/api/v1/admin/source-sites'),
+      fetch('/api/v1/research-fields'),
     ]);
     if (responses.some((response) => !response.ok)) {
       const denied = responses.some((response) => response.status === 403);
-      setErrorMessage(denied ? '이 계정은 관리자 허용 목록에 없습니다.' : '관리 데이터를 불러오지 못했습니다.');
+      setErrorMessage(
+        denied
+          ? '이 계정은 관리자 허용 목록에 없습니다.'
+          : '관리 데이터를 불러오지 못했습니다.',
+      );
       setLoading(false);
       return;
     }
-    const [statsData, candidatesData, conferencesData, sourcesData] = await Promise.all(responses.map((response) => response.json())) as [Stats, { items: Candidate[] }, { items: AdminConference[] }, { items: SourceSite[] }];
+    const [statsData, conferencesData, sourcesData, fieldsData] =
+      (await Promise.all(responses.map((response) => response.json()))) as [
+        Stats,
+        { items: AdminConference[] },
+        { items: SourceSite[] },
+        ResearchField[],
+      ];
     setStats(statsData);
-    setCandidates(candidatesData.items);
     setConferences(conferencesData.items);
     setSources(sourcesData.items);
+    setFields(fieldsData);
     setLoading(false);
   }, []);
 
@@ -95,118 +209,1009 @@ export function AdminWorkspace({ userName }: { userName: string }) {
     return () => window.clearTimeout(timeout);
   }, [load]);
 
-  async function approve(candidate: Candidate) {
-    const response = await fetch(`/api/v1/admin/collection-candidates/${candidate.id}/approve`, { method: 'POST' });
-    if (!response.ok) return setErrorMessage('승인 처리에 실패했습니다.');
-    setCandidates((items) => items.filter((item) => item.id !== candidate.id));
-    setStats((current) => current ? { ...current, pending_candidates: Math.max(0, current.pending_candidates - 1) } : current);
-    setMessage(`${candidate.extracted_acronym} 후보를 승인했습니다.`);
-  }
-
-  async function reject() {
-    if (!rejecting || !rejectReason.trim()) return;
-    const response = await fetch(`/api/v1/admin/collection-candidates/${rejecting.id}/reject`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ decision: 'REJECTED', reason: rejectReason.trim() }),
+  const visibleConferences = useMemo(() => {
+    const keyword = search.trim().toLowerCase();
+    return conferences.filter((conference) => {
+      const matchesKeyword =
+        !keyword ||
+        conference.name.toLowerCase().includes(keyword) ||
+        (conference.acronym ?? '').toLowerCase().includes(keyword);
+      return (
+        matchesKeyword &&
+        (statusFilter === 'ALL' || conference.status === statusFilter)
+      );
     });
-    if (!response.ok) return setErrorMessage('거절 처리에 실패했습니다.');
-    setCandidates((items) => items.filter((item) => item.id !== rejecting.id));
-    setStats((current) => current ? { ...current, pending_candidates: Math.max(0, current.pending_candidates - 1) } : current);
-    setMessage(`${rejecting.extracted_acronym} 후보를 거절했습니다.`);
-    setRejecting(null);
-    setRejectReason('');
+  }, [conferences, search, statusFilter]);
+
+  async function openEditor(conference?: AdminConference) {
+    setErrorMessage('');
+    if (!conference) return setConferenceDraft(emptyConference());
+    const response = await fetch(`/api/v1/admin/conferences/${conference.id}`);
+    if (!response.ok)
+      return setErrorMessage('학회 상세 정보를 불러오지 못했습니다.');
+    const detail = (await response.json()) as AdminConference & {
+      research_fields: Array<{ research_field_id: number; is_primary: number }>;
+      milestones: Array<MilestoneDraft>;
+      links: Array<LinkDraft>;
+    };
+    const selectedFields = detail.research_fields.map((field) =>
+      Number(field.research_field_id),
+    );
+    setConferenceDraft({
+      id: detail.id,
+      name: detail.name,
+      acronym: detail.acronym ?? '',
+      edition_year: detail.edition_year ? `${detail.edition_year}` : '',
+      description: detail.description ?? '',
+      country_code: detail.country_code,
+      city: detail.city ?? '',
+      venue: detail.venue ?? '',
+      format: detail.format,
+      status: detail.status,
+      research_field_ids: selectedFields,
+      primary_research_field_id:
+        detail.research_fields.find((field) => Boolean(field.is_primary))
+          ?.research_field_id ??
+        selectedFields[0] ??
+        null,
+      milestones: detail.milestones.map((item) => ({
+        ...item,
+        event_at: dateTimeLocal(item.event_at),
+        time_confirmed: Boolean(item.time_confirmed),
+      })),
+      links: detail.links.map((item) => ({
+        ...item,
+        is_active: Boolean(item.is_active),
+      })),
+    });
   }
 
-  async function createConference(event: SyntheticEvent<HTMLFormElement>) {
+  function updateDraft<K extends keyof ConferenceDraft>(
+    key: K,
+    value: ConferenceDraft[K],
+  ) {
+    setConferenceDraft((current) =>
+      current ? { ...current, [key]: value } : current,
+    );
+  }
+
+  async function saveConference(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const response = await fetch('/api/v1/admin/conferences', {
-      method: 'POST',
+    if (!conferenceDraft) return;
+    setSaving(true);
+    setErrorMessage('');
+    const payload = {
+      ...conferenceDraft,
+      edition_year: conferenceDraft.edition_year
+        ? Number(conferenceDraft.edition_year)
+        : null,
+      acronym: conferenceDraft.acronym || null,
+      description: conferenceDraft.description || null,
+      city: conferenceDraft.city || null,
+      venue: conferenceDraft.venue || null,
+      country_code: conferenceDraft.country_code.toUpperCase(),
+      milestones: conferenceDraft.milestones.map((item) => ({
+        ...item,
+        event_at: `${item.event_at}:00Z`,
+      })),
+    };
+    const response = await fetch(
+      conferenceDraft.id
+        ? `/api/v1/admin/conferences/${conferenceDraft.id}`
+        : '/api/v1/admin/conferences',
+      {
+        method: conferenceDraft.id ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      },
+    );
+    setSaving(false);
+    if (!response.ok) {
+      const data = (await response.json().catch(() => null)) as {
+        error?: { message?: string };
+      } | null;
+      return setErrorMessage(
+        data?.error?.message ?? '학회 저장에 실패했습니다.',
+      );
+    }
+    const wasEditing = Boolean(conferenceDraft.id);
+    setConferenceDraft(null);
+    setMessage(
+      wasEditing
+        ? '학회 정보와 공식 일정을 수정했습니다.'
+        : '새 학회를 등록했습니다.',
+    );
+    await load();
+  }
+
+  async function saveSource(event: SyntheticEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!sourceDraft) return;
+    setSaving(true);
+    const isNew = sourceDraft.id === 0;
+    const response = await fetch(
+      isNew
+        ? '/api/v1/admin/source-sites'
+        : `/api/v1/admin/source-sites/${sourceDraft.id}`,
+      {
+        method: isNew ? 'POST' : 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...sourceDraft,
+          is_active: Boolean(sourceDraft.is_active),
+        }),
+      },
+    );
+    setSaving(false);
+    if (!response.ok) return setErrorMessage('수집 출처 저장에 실패했습니다.');
+    setSourceDraft(null);
+    setMessage(
+      isNew ? '수집 출처를 추가했습니다.' : '수집 출처 설정을 변경했습니다.',
+    );
+    await load();
+  }
+
+  async function toggleSource(source: SourceSite) {
+    const response = await fetch(`/api/v1/admin/source-sites/${source.id}`, {
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: form.get('name'),
-        acronym: form.get('acronym'),
-        edition_year: Number(form.get('edition_year')),
-        country_code: form.get('country_code'),
-        city: form.get('city'),
-        format: form.get('format'),
-        status: 'DRAFT',
-      }),
+      body: JSON.stringify({ ...source, is_active: !source.is_active }),
     });
-    if (!response.ok) return setErrorMessage('학회 생성에 실패했습니다.');
-    const created = await response.json() as AdminConference;
-    setConferences((items) => [created, ...items]);
-    setCreateOpen(false);
-    setMessage('새 학회를 임시 저장했습니다.');
+    if (!response.ok)
+      return setErrorMessage('수집 출처 상태를 변경하지 못했습니다.');
+    setMessage(
+      `${source.name} 수집을 ${source.is_active ? '중지' : '활성화'}했습니다.`,
+    );
+    await load();
   }
 
   return (
     <div className="min-h-screen bg-[#F8F8EC] text-[#203126]">
       <header className="bg-[#2F6B3F] text-white">
         <div className="mx-auto flex h-20 max-w-[1500px] items-center gap-4 px-5 sm:px-8">
-          <Link href="/" className="grid size-10 place-items-center rounded-xl bg-white/10 transition hover:bg-white/20" aria-label="캘린더로 돌아가기"><ArrowLeft /></Link>
+          <Link
+            href="/"
+            className="grid size-10 place-items-center rounded-xl bg-white/10 transition hover:bg-white/20"
+            aria-label="캘린더로 돌아가기"
+          >
+            <ArrowLeft />
+          </Link>
           <div>
-            <p className="text-lg font-black tracking-tight">Conference Tracker Admin</p>
-            <p className="text-xs text-white/70">수집 데이터 검수 및 학회 정보 관리</p>
+            <p className="text-lg font-black tracking-tight">
+              Conference Tracker Admin
+            </p>
+            <p className="text-xs text-white/70">
+              학회·공식 일정 및 수집 출처 관리
+            </p>
           </div>
-          <div className="ml-auto hidden items-center gap-2 rounded-full bg-white/10 px-3 py-2 text-sm sm:flex"><ShieldCheck className="size-4 text-[#F7C85C]" /> {userName}</div>
+          <div className="ml-auto hidden items-center gap-2 rounded-full bg-white/10 px-3 py-2 text-sm sm:flex">
+            <ShieldCheck className="size-4 text-[#F7C85C]" /> {userName}
+          </div>
         </div>
       </header>
 
       <main className="mx-auto max-w-[1500px] px-5 py-7 sm:px-8 sm:py-10">
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-          <div><Badge className="bg-[#FFF6C0] text-[#6A5117] hover:bg-[#FFF6C0]">관리자 전용</Badge><h1 className="mt-3 text-3xl font-black tracking-[-0.035em] text-[#183E28]">검수 대시보드</h1><p className="mt-2 text-sm text-[#68746B]">자동 수집 결과를 확인하고 공개할 학회 정보를 관리합니다.</p></div>
-          <div className="flex gap-2"><Button variant="outline" className="border-[#2F6B3F]/15 bg-white" onClick={() => void load()} disabled={loading}><RefreshCw className={loading ? 'animate-spin' : ''} /> 새로고침</Button><Button className="bg-[#F7C85C] font-bold text-[#40320E] hover:bg-[#E8B642]" onClick={() => setCreateOpen(true)}><Plus /> 학회 직접 등록</Button></div>
+          <div>
+            <Badge className="bg-[#FFF6C0] text-[#6A5117] hover:bg-[#FFF6C0]">
+              관리자 전용
+            </Badge>
+            <h1 className="mt-3 text-3xl font-black tracking-[-0.035em] text-[#183E28]">
+              운영 대시보드
+            </h1>
+            <p className="mt-2 text-sm text-[#68746B]">
+              공개할 학회 정보와 학회가 발표한 공식 일정을 관리합니다.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            className="w-fit border-[#2F6B3F]/15 bg-white"
+            onClick={() => void load()}
+            disabled={loading}
+          >
+            <RefreshCw className={loading ? 'animate-spin' : ''} /> 새로고침
+          </Button>
         </div>
 
-        {message && <div className="mt-5 flex items-center gap-2 rounded-xl border border-[#7FB77E]/30 bg-[#EAF4E3] px-4 py-3 text-sm font-semibold text-[#2F6B3F]"><Check className="size-4" /> {message}<button className="ml-auto" onClick={() => setMessage('')} aria-label="알림 닫기"><X className="size-4" /></button></div>}
-        {errorMessage && <div className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{errorMessage}</div>}
+        {message && (
+          <div className="mt-5 flex items-center gap-2 rounded-xl border border-[#7FB77E]/30 bg-[#EAF4E3] px-4 py-3 text-sm font-semibold text-[#2F6B3F]">
+            <Check className="size-4" /> {message}
+            <button
+              className="ml-auto"
+              onClick={() => setMessage('')}
+              aria-label="알림 닫기"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+        )}
+        {errorMessage && (
+          <div className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+            {errorMessage}
+          </div>
+        )}
 
         <section className="mt-6 grid gap-4 md:grid-cols-3">
-          {[{ label: '검수 대기', value: stats?.pending_candidates ?? '—', icon: FileCheck2, tone: 'bg-[#FFF6C0] text-[#795914]' }, { label: '공개 학회', value: stats?.published_conferences ?? '—', icon: Globe2, tone: 'bg-[#E5F1DF] text-[#2F6B3F]' }, { label: '활성 수집 출처', value: stats?.active_sources ?? '—', icon: Database, tone: 'bg-[#DDEDDC] text-[#2F6B3F]' }].map((item) => <div key={item.label} className="rounded-2xl border border-[#2F6B3F]/10 bg-white p-5 shadow-sm"><div className={`grid size-10 place-items-center rounded-xl ${item.tone}`}><item.icon className="size-5" /></div><p className="mt-5 text-3xl font-black">{item.value}</p><p className="mt-1 text-sm font-semibold text-[#6C786F]">{item.label}</p></div>)}
+          {[
+            {
+              label: '공개 학회',
+              value: stats?.published_conferences ?? '—',
+              icon: Globe2,
+              tone: 'bg-[#E5F1DF] text-[#2F6B3F]',
+            },
+            {
+              label: '등록된 공식 일정',
+              value: stats?.total_milestones ?? '—',
+              icon: CalendarDays,
+              tone: 'bg-[#FFF6C0] text-[#795914]',
+            },
+            {
+              label: '활성 수집 출처',
+              value: stats?.active_sources ?? '—',
+              icon: Database,
+              tone: 'bg-[#DDEDDC] text-[#2F6B3F]',
+            },
+          ].map((item) => (
+            <div
+              key={item.label}
+              className="rounded-2xl border border-[#2F6B3F]/10 bg-white p-5 shadow-sm"
+            >
+              <div
+                className={`grid size-10 place-items-center rounded-xl ${item.tone}`}
+              >
+                <item.icon className="size-5" />
+              </div>
+              <p className="mt-5 text-3xl font-black">{item.value}</p>
+              <p className="mt-1 text-sm font-semibold text-[#6C786F]">
+                {item.label}
+              </p>
+            </div>
+          ))}
         </section>
 
-        <Tabs defaultValue="review" className="mt-8">
-          <TabsList className="h-11 w-full justify-start rounded-xl bg-white p-1 shadow-sm sm:w-fit">
-            <TabsTrigger value="review" className="px-4">검수 대기 <Badge className="ml-1 bg-[#F7C85C] text-[#4C3B12] hover:bg-[#F7C85C]">{candidates.length}</Badge></TabsTrigger>
-            <TabsTrigger value="conferences" className="px-4">학회 관리</TabsTrigger>
-            <TabsTrigger value="sources" className="px-4">수집 출처</TabsTrigger>
-          </TabsList>
+        <Tabs defaultValue="conferences" className="mt-8">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <TabsList className="h-11 w-full justify-start rounded-xl bg-white p-1 shadow-sm sm:w-fit">
+              <TabsTrigger value="conferences" className="px-4">
+                학회 및 일정
+              </TabsTrigger>
+              <TabsTrigger value="sources" className="px-4">
+                수집 출처
+              </TabsTrigger>
+            </TabsList>
+            <Button
+              className="w-fit bg-[#F7C85C] font-bold text-[#40320E] hover:bg-[#E8B642]"
+              onClick={() => void openEditor()}
+            >
+              <Plus /> 학회 등록
+            </Button>
+          </div>
 
-          <TabsContent value="review" className="mt-4 overflow-hidden rounded-2xl border border-[#2F6B3F]/10 bg-white shadow-sm">
-            <Table>
-              <TableHeader className="bg-[#FFF9DA]"><TableRow><TableHead className="pl-5">수집된 학회</TableHead><TableHead>기관</TableHead><TableHead>지역·형식</TableHead><TableHead>출처</TableHead><TableHead className="pr-5 text-right">검수</TableHead></TableRow></TableHeader>
-              <TableBody>
-                {candidates.map((candidate) => <TableRow key={candidate.id}>
-                  <TableCell className="pl-5"><p className="font-black text-[#204F31]">{candidate.extracted_acronym}</p><p className="mt-1 max-w-[340px] truncate text-xs text-[#748078]">{candidate.extracted_name}</p></TableCell>
-                  <TableCell>{candidate.extracted_organization}</TableCell>
-                  <TableCell><Badge variant="outline" className="border-[#7FB77E]/40">{candidate.extracted_country_code} · {candidate.extracted_format}</Badge></TableCell>
-                  <TableCell><a href={candidate.source_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-semibold text-[#2F6B3F]">원문 <ExternalLink className="size-3.5" /></a></TableCell>
-                  <TableCell className="pr-5"><div className="flex justify-end gap-2"><Button size="sm" variant="outline" className="border-red-200 text-red-700 hover:bg-red-50" onClick={() => setRejecting(candidate)}>거절</Button><Button size="sm" className="bg-[#2F6B3F]" onClick={() => void approve(candidate)}>승인</Button></div></TableCell>
-                </TableRow>)}
-                {!loading && candidates.length === 0 && <TableRow><TableCell colSpan={5} className="py-14 text-center text-[#748078]">검수를 기다리는 데이터가 없습니다.</TableCell></TableRow>}
-              </TableBody>
-            </Table>
+          <TabsContent value="conferences" className="mt-4">
+            <div className="mb-3 grid gap-2 rounded-2xl border border-[#2F6B3F]/10 bg-white p-3 shadow-sm sm:grid-cols-[1fr_190px]">
+              <Input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="학회명 또는 약어 검색"
+                aria-label="학회 검색"
+              />
+              <NativeSelect
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value)}
+              >
+                <NativeSelectOption value="ALL">전체 상태</NativeSelectOption>
+                <NativeSelectOption value="PUBLISHED">공개</NativeSelectOption>
+                <NativeSelectOption value="DRAFT">임시 저장</NativeSelectOption>
+                <NativeSelectOption value="HIDDEN">숨김</NativeSelectOption>
+              </NativeSelect>
+            </div>
+            <div className="overflow-hidden rounded-2xl border border-[#2F6B3F]/10 bg-white shadow-sm">
+              <Table>
+                <TableHeader className="bg-[#FFF9DA]">
+                  <TableRow>
+                    <TableHead className="pl-5">학회</TableHead>
+                    <TableHead>분야</TableHead>
+                    <TableHead>공식 일정</TableHead>
+                    <TableHead>다음 일정</TableHead>
+                    <TableHead>상태</TableHead>
+                    <TableHead className="pr-5 text-right">관리</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {visibleConferences.map((conference) => (
+                    <TableRow key={conference.id}>
+                      <TableCell className="pl-5">
+                        <p className="font-black text-[#204F31]">
+                          {conference.acronym || '약어 없음'}{' '}
+                          {conference.edition_year ?? ''}
+                        </p>
+                        <p className="mt-1 max-w-[360px] truncate text-xs text-[#748078]">
+                          {conference.name}
+                        </p>
+                        <p className="mt-1 text-xs text-[#8A948D]">
+                          {conference.country_code} · {conference.format}
+                        </p>
+                      </TableCell>
+                      <TableCell>{conference.research_field_count}개</TableCell>
+                      <TableCell>{conference.milestone_count}개</TableCell>
+                      <TableCell>
+                        <p className="font-bold text-[#2F6B3F]">
+                          {dDay(conference.next_milestone_at)}
+                        </p>
+                        {conference.next_milestone_at && (
+                          <p className="mt-1 text-xs text-[#748078]">
+                            {conference.next_milestone_at.slice(0, 10)}
+                          </p>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          className={
+                            conference.status === 'PUBLISHED'
+                              ? 'bg-[#E1F0DD] text-[#2F6B3F]'
+                              : conference.status === 'HIDDEN'
+                                ? 'bg-[#ECEDEB] text-[#58625A]'
+                                : 'bg-[#FFF6C0] text-[#6D5318]'
+                          }
+                        >
+                          {statusLabel(conference.status)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="pr-5 text-right">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => void openEditor(conference)}
+                        >
+                          <Pencil /> 편집
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {!loading && visibleConferences.length === 0 && (
+                    <TableRow>
+                      <TableCell
+                        colSpan={6}
+                        className="py-14 text-center text-[#748078]"
+                      >
+                        조건에 맞는 학회가 없습니다.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
           </TabsContent>
 
-          <TabsContent value="conferences" className="mt-4 overflow-hidden rounded-2xl border border-[#2F6B3F]/10 bg-white shadow-sm">
-            <Table><TableHeader className="bg-[#FFF9DA]"><TableRow><TableHead className="pl-5">학회</TableHead><TableHead>국가</TableHead><TableHead>형식</TableHead><TableHead className="pr-5">상태</TableHead></TableRow></TableHeader><TableBody>{conferences.map((conference) => <TableRow key={conference.id}><TableCell className="pl-5"><p className="font-black">{conference.acronym || '약어 없음'}</p><p className="mt-1 max-w-[520px] truncate text-xs text-[#748078]">{conference.name}</p></TableCell><TableCell>{conference.country_code}</TableCell><TableCell>{conference.format}</TableCell><TableCell className="pr-5"><Badge className={conference.status === 'PUBLISHED' ? 'bg-[#E1F0DD] text-[#2F6B3F]' : 'bg-[#FFF6C0] text-[#6D5318]'}>{conference.status}</Badge></TableCell></TableRow>)}</TableBody></Table>
-          </TabsContent>
-
-          <TabsContent value="sources" className="mt-4 grid gap-3 md:grid-cols-2">
-            {sources.map((source) => <article key={source.id} className="rounded-2xl border border-[#2F6B3F]/10 bg-white p-5 shadow-sm"><div className="flex items-start justify-between"><div className="grid size-10 place-items-center rounded-xl bg-[#E5F1DF] text-[#2F6B3F]"><Database className="size-5" /></div><Badge className={source.is_active ? 'bg-[#7FB77E]/20 text-[#2F6B3F]' : ''}>{source.is_active ? '활성' : '중지'}</Badge></div><h2 className="mt-4 font-black text-[#204F31]">{source.name}</h2><p className="mt-1 truncate text-sm text-[#718076]">{source.base_url}</p><div className="mt-4 flex items-center justify-between border-t border-[#2F6B3F]/8 pt-4 text-xs text-[#748078]"><span>{source.source_type}</span><span>최근 수집 {source.last_collected_at ? '완료' : '없음'}</span></div></article>)}
+          <TabsContent value="sources" className="mt-4">
+            <div className="mb-3 flex justify-end">
+              <Button
+                variant="outline"
+                className="bg-white"
+                onClick={() =>
+                  setSourceDraft({
+                    id: 0,
+                    name: '',
+                    base_url: '',
+                    source_type: 'WEB_PAGE',
+                    is_active: 1,
+                    last_collected_at: null,
+                  })
+                }
+              >
+                <Plus /> 출처 추가
+              </Button>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              {sources.map((source) => (
+                <article
+                  key={source.id}
+                  className="rounded-2xl border border-[#2F6B3F]/10 bg-white p-5 shadow-sm"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="grid size-10 place-items-center rounded-xl bg-[#E5F1DF] text-[#2F6B3F]">
+                      <Database className="size-5" />
+                    </div>
+                    <Badge
+                      className={
+                        source.is_active
+                          ? 'bg-[#7FB77E]/20 text-[#2F6B3F]'
+                          : 'bg-[#ECEDEB] text-[#58625A]'
+                      }
+                    >
+                      {source.is_active ? '활성' : '중지'}
+                    </Badge>
+                  </div>
+                  <h2 className="mt-4 font-black text-[#204F31]">
+                    {source.name}
+                  </h2>
+                  <a
+                    href={source.base_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-1 block truncate text-sm text-[#4D755A] underline underline-offset-4"
+                  >
+                    {source.base_url}
+                  </a>
+                  <div className="mt-4 flex items-center justify-between border-t border-[#2F6B3F]/8 pt-4 text-xs text-[#748078]">
+                    <span>{source.source_type}</span>
+                    <span>
+                      최근 수집{' '}
+                      {source.last_collected_at
+                        ? source.last_collected_at.slice(0, 10)
+                        : '기록 없음'}
+                    </span>
+                  </div>
+                  <div className="mt-4 flex justify-end gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setSourceDraft(source)}
+                    >
+                      설정
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={source.is_active ? 'outline' : 'default'}
+                      className={source.is_active ? '' : 'bg-[#2F6B3F]'}
+                      onClick={() => void toggleSource(source)}
+                    >
+                      {source.is_active ? '수집 중지' : '수집 활성화'}
+                    </Button>
+                  </div>
+                </article>
+              ))}
+            </div>
           </TabsContent>
         </Tabs>
       </main>
 
-      <Dialog open={rejecting !== null} onOpenChange={(open) => !open && setRejecting(null)}>
-        <DialogContent className="border-[#2F6B3F]/12 bg-[#FFFDF5] sm:max-w-md"><DialogHeader><DialogTitle className="text-xl font-black text-[#204F31]">수집 후보 거절</DialogTitle><DialogDescription>{rejecting?.extracted_acronym}을 공개하지 않는 이유를 기록합니다.</DialogDescription></DialogHeader><Textarea value={rejectReason} onChange={(event) => setRejectReason(event.target.value)} placeholder="거절 사유를 입력하세요" className="min-h-28" /><DialogFooter><Button variant="outline" onClick={() => setRejecting(null)}>취소</Button><Button variant="destructive" disabled={!rejectReason.trim()} onClick={() => void reject()}>거절 처리</Button></DialogFooter></DialogContent>
+      <Dialog
+        open={conferenceDraft !== null}
+        onOpenChange={(open) => !open && setConferenceDraft(null)}
+      >
+        <DialogContent className="max-h-[92vh] overflow-hidden border-[#2F6B3F]/12 bg-[#FFFDF5] sm:max-w-5xl">
+          {conferenceDraft && (
+            <form
+              onSubmit={saveConference}
+              className="flex max-h-[86vh] flex-col"
+            >
+              <DialogHeader>
+                <DialogTitle className="text-2xl font-black text-[#204F31]">
+                  {conferenceDraft.id ? '학회 및 공식 일정 편집' : '학회 등록'}
+                </DialogTitle>
+                <DialogDescription>
+                  메인 캘린더에 표시할 학회 정보, ACM CCS 분야, 공식 일정명과
+                  링크를 함께 관리합니다.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="mt-5 space-y-7 overflow-y-auto pr-2">
+                <EditorSection icon={Globe2} title="기본 정보">
+                  <div className="grid gap-3">
+                    <Input
+                      required
+                      value={conferenceDraft.name}
+                      onChange={(event) =>
+                        updateDraft('name', event.target.value)
+                      }
+                      placeholder="학회 전체 이름"
+                    />
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <Input
+                        value={conferenceDraft.acronym}
+                        onChange={(event) =>
+                          updateDraft('acronym', event.target.value)
+                        }
+                        placeholder="약어"
+                      />
+                      <Input
+                        required
+                        type="number"
+                        value={conferenceDraft.edition_year}
+                        onChange={(event) =>
+                          updateDraft('edition_year', event.target.value)
+                        }
+                        placeholder="개최 연도"
+                      />
+                      <NativeSelect
+                        value={conferenceDraft.status}
+                        onChange={(event) =>
+                          updateDraft(
+                            'status',
+                            event.target.value as ConferenceDraft['status'],
+                          )
+                        }
+                      >
+                        <NativeSelectOption value="DRAFT">
+                          임시 저장
+                        </NativeSelectOption>
+                        <NativeSelectOption value="PUBLISHED">
+                          공개
+                        </NativeSelectOption>
+                        <NativeSelectOption value="HIDDEN">
+                          숨김
+                        </NativeSelectOption>
+                      </NativeSelect>
+                    </div>
+                    <Textarea
+                      value={conferenceDraft.description}
+                      onChange={(event) =>
+                        updateDraft('description', event.target.value)
+                      }
+                      placeholder="학회 소개"
+                    />
+                    <div className="grid gap-3 sm:grid-cols-4">
+                      <Input
+                        required
+                        maxLength={2}
+                        value={conferenceDraft.country_code}
+                        onChange={(event) =>
+                          updateDraft('country_code', event.target.value)
+                        }
+                        placeholder="국가 코드 (KR)"
+                      />
+                      <Input
+                        value={conferenceDraft.city}
+                        onChange={(event) =>
+                          updateDraft('city', event.target.value)
+                        }
+                        placeholder="도시"
+                      />
+                      <Input
+                        value={conferenceDraft.venue}
+                        onChange={(event) =>
+                          updateDraft('venue', event.target.value)
+                        }
+                        placeholder="개최 장소"
+                      />
+                      <NativeSelect
+                        value={conferenceDraft.format}
+                        onChange={(event) =>
+                          updateDraft(
+                            'format',
+                            event.target.value as ConferenceDraft['format'],
+                          )
+                        }
+                      >
+                        <NativeSelectOption value="ONSITE">
+                          오프라인
+                        </NativeSelectOption>
+                        <NativeSelectOption value="ONLINE">
+                          온라인
+                        </NativeSelectOption>
+                        <NativeSelectOption value="HYBRID">
+                          하이브리드
+                        </NativeSelectOption>
+                      </NativeSelect>
+                    </div>
+                  </div>
+                </EditorSection>
+
+                <EditorSection icon={ListTree} title="ACM CCS 분야">
+                  <p className="mb-3 text-sm text-[#748078]">
+                    여러 분야를 선택할 수 있으며, 대표 분야는 하나만 지정합니다.
+                  </p>
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    {fields.map((field) => {
+                      const checked =
+                        conferenceDraft.research_field_ids.includes(field.id);
+                      const checkboxId = `field-${field.id}`;
+                      return (
+                        <div
+                          key={field.id}
+                          className={`rounded-xl border p-3 ${checked ? 'border-[#7FB77E] bg-[#F0F7EC]' : 'border-[#2F6B3F]/10 bg-white'}`}
+                        >
+                          <div className="flex items-start gap-2">
+                            <Checkbox
+                              id={checkboxId}
+                              checked={checked}
+                              onCheckedChange={(value) => {
+                                const next = value
+                                  ? [
+                                      ...conferenceDraft.research_field_ids,
+                                      field.id,
+                                    ]
+                                  : conferenceDraft.research_field_ids.filter(
+                                      (id) => id !== field.id,
+                                    );
+                                updateDraft('research_field_ids', next);
+                                if (
+                                  !value &&
+                                  conferenceDraft.primary_research_field_id ===
+                                    field.id
+                                )
+                                  updateDraft(
+                                    'primary_research_field_id',
+                                    next[0] ?? null,
+                                  );
+                              }}
+                            />
+                            <label
+                              htmlFor={checkboxId}
+                              className="cursor-pointer"
+                            >
+                              <span className="block text-sm font-bold">
+                                {field.name_ko}
+                              </span>
+                              <span className="mt-0.5 block text-xs text-[#748078]">
+                                {field.name_en}
+                              </span>
+                            </label>
+                          </div>
+                          {checked && (
+                            <button
+                              type="button"
+                              className={`mt-2 text-xs font-bold ${conferenceDraft.primary_research_field_id === field.id ? 'text-[#2F6B3F]' : 'text-[#89928B] underline'}`}
+                              onClick={() =>
+                                updateDraft(
+                                  'primary_research_field_id',
+                                  field.id,
+                                )
+                              }
+                            >
+                              {conferenceDraft.primary_research_field_id ===
+                              field.id
+                                ? '대표 분야'
+                                : '대표 분야로 지정'}
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </EditorSection>
+
+                <EditorSection icon={CalendarDays} title="공식 일정">
+                  <p className="mb-3 text-sm text-[#748078]">
+                    학회가 사용하는 구분명과 일정명을 그대로 입력합니다. 예:
+                    Papers · Submission Due
+                  </p>
+                  <div className="space-y-3">
+                    {conferenceDraft.milestones.map((item, index) => (
+                      <div
+                        key={index}
+                        className="grid gap-2 rounded-xl border border-[#2F6B3F]/10 bg-white p-3 lg:grid-cols-[1fr_1.3fr_1.2fr_0.7fr_auto]"
+                      >
+                        <Input
+                          value={item.group_name}
+                          onChange={(event) =>
+                            updateDraft(
+                              'milestones',
+                              conferenceDraft.milestones.map((row, i) =>
+                                i === index
+                                  ? { ...row, group_name: event.target.value }
+                                  : row,
+                              ),
+                            )
+                          }
+                          placeholder="구분명 (Papers)"
+                        />
+                        <Input
+                          required
+                          value={item.title}
+                          onChange={(event) =>
+                            updateDraft(
+                              'milestones',
+                              conferenceDraft.milestones.map((row, i) =>
+                                i === index
+                                  ? { ...row, title: event.target.value }
+                                  : row,
+                              ),
+                            )
+                          }
+                          placeholder="공식 일정명"
+                        />
+                        <Input
+                          required
+                          type="datetime-local"
+                          value={item.event_at}
+                          onChange={(event) =>
+                            updateDraft(
+                              'milestones',
+                              conferenceDraft.milestones.map((row, i) =>
+                                i === index
+                                  ? { ...row, event_at: event.target.value }
+                                  : row,
+                              ),
+                            )
+                          }
+                        />
+                        <Input
+                          required
+                          value={item.original_timezone}
+                          onChange={(event) =>
+                            updateDraft(
+                              'milestones',
+                              conferenceDraft.milestones.map((row, i) =>
+                                i === index
+                                  ? {
+                                      ...row,
+                                      original_timezone: event.target.value,
+                                    }
+                                  : row,
+                              ),
+                            )
+                          }
+                          placeholder="AoE / UTC"
+                        />
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          className="text-red-600"
+                          aria-label="일정 삭제"
+                          onClick={() =>
+                            updateDraft(
+                              'milestones',
+                              conferenceDraft.milestones.filter(
+                                (_, i) => i !== index,
+                              ),
+                            )
+                          }
+                        >
+                          <Trash2 />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="mt-3"
+                    onClick={() =>
+                      updateDraft('milestones', [
+                        ...conferenceDraft.milestones,
+                        {
+                          group_name: '',
+                          title: '',
+                          event_at: '',
+                          original_timezone: 'AoE',
+                          time_confirmed: true,
+                        },
+                      ])
+                    }
+                  >
+                    <Plus /> 공식 일정 추가
+                  </Button>
+                </EditorSection>
+
+                <EditorSection icon={Link2} title="관련 링크">
+                  <div className="space-y-3">
+                    {conferenceDraft.links.map((item, index) => (
+                      <div
+                        key={index}
+                        className="grid gap-2 rounded-xl border border-[#2F6B3F]/10 bg-white p-3 lg:grid-cols-[0.8fr_1fr_2fr_auto]"
+                      >
+                        <NativeSelect
+                          value={item.type}
+                          onChange={(event) =>
+                            updateDraft(
+                              'links',
+                              conferenceDraft.links.map((row, i) =>
+                                i === index
+                                  ? { ...row, type: event.target.value }
+                                  : row,
+                              ),
+                            )
+                          }
+                        >
+                          <NativeSelectOption value="HOMEPAGE">
+                            공식 홈페이지
+                          </NativeSelectOption>
+                          <NativeSelectOption value="SUBMISSION">
+                            논문 제출
+                          </NativeSelectOption>
+                          <NativeSelectOption value="REGISTRATION">
+                            등록
+                          </NativeSelectOption>
+                          <NativeSelectOption value="OTHER">
+                            기타
+                          </NativeSelectOption>
+                        </NativeSelect>
+                        <Input
+                          required
+                          value={item.label}
+                          onChange={(event) =>
+                            updateDraft(
+                              'links',
+                              conferenceDraft.links.map((row, i) =>
+                                i === index
+                                  ? { ...row, label: event.target.value }
+                                  : row,
+                              ),
+                            )
+                          }
+                          placeholder="표시 이름"
+                        />
+                        <Input
+                          required
+                          type="url"
+                          value={item.url}
+                          onChange={(event) =>
+                            updateDraft(
+                              'links',
+                              conferenceDraft.links.map((row, i) =>
+                                i === index
+                                  ? { ...row, url: event.target.value }
+                                  : row,
+                              ),
+                            )
+                          }
+                          placeholder="https://"
+                        />
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          className="text-red-600"
+                          aria-label="링크 삭제"
+                          onClick={() =>
+                            updateDraft(
+                              'links',
+                              conferenceDraft.links.filter(
+                                (_, i) => i !== index,
+                              ),
+                            )
+                          }
+                        >
+                          <Trash2 />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="mt-3"
+                    onClick={() =>
+                      updateDraft('links', [
+                        ...conferenceDraft.links,
+                        {
+                          type: 'HOMEPAGE',
+                          label: '',
+                          url: '',
+                          is_active: true,
+                        },
+                      ])
+                    }
+                  >
+                    <Plus /> 링크 추가
+                  </Button>
+                </EditorSection>
+              </div>
+              <DialogFooter className="mt-5 border-t border-[#2F6B3F]/10 pt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setConferenceDraft(null)}
+                >
+                  취소
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={saving}
+                  className="bg-[#2F6B3F] hover:bg-[#245832]"
+                >
+                  {saving
+                    ? '저장 중…'
+                    : conferenceDraft.status === 'PUBLISHED'
+                      ? '저장하고 공개'
+                      : '저장'}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
       </Dialog>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="border-[#2F6B3F]/12 bg-[#FFFDF5] sm:max-w-lg"><form onSubmit={createConference}><DialogHeader><DialogTitle className="text-xl font-black text-[#204F31]">학회 직접 등록</DialogTitle><DialogDescription>기본 정보를 입력해 임시 상태로 저장합니다. 일정과 링크는 저장 후 추가합니다.</DialogDescription></DialogHeader><div className="mt-5 grid gap-3"><Input name="name" required placeholder="학회 전체 이름" /><div className="grid grid-cols-2 gap-3"><Input name="acronym" placeholder="약어" /><Input name="edition_year" type="number" defaultValue={2027} placeholder="개최 연도" /></div><div className="grid grid-cols-2 gap-3"><Input name="country_code" required maxLength={2} placeholder="국가 코드 (KR)" /><Input name="city" placeholder="도시" /></div><NativeSelect name="format" className="w-full"><NativeSelectOption value="ONSITE">오프라인</NativeSelectOption><NativeSelectOption value="ONLINE">온라인</NativeSelectOption><NativeSelectOption value="HYBRID">하이브리드</NativeSelectOption></NativeSelect></div><DialogFooter className="mt-5"><Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>취소</Button><Button type="submit" className="bg-[#2F6B3F]">임시 저장</Button></DialogFooter></form></DialogContent>
+      <Dialog
+        open={sourceDraft !== null}
+        onOpenChange={(open) => !open && setSourceDraft(null)}
+      >
+        <DialogContent className="border-[#2F6B3F]/12 bg-[#FFFDF5] sm:max-w-lg">
+          {sourceDraft && (
+            <form onSubmit={saveSource}>
+              <DialogHeader>
+                <DialogTitle className="text-xl font-black text-[#204F31]">
+                  {sourceDraft.id ? '수집 출처 설정' : '수집 출처 추가'}
+                </DialogTitle>
+                <DialogDescription>
+                  자동 수집에 사용할 공식 페이지나 데이터 출처를 관리합니다.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="mt-5 grid gap-3">
+                <Input
+                  required
+                  value={sourceDraft.name}
+                  onChange={(event) =>
+                    setSourceDraft({ ...sourceDraft, name: event.target.value })
+                  }
+                  placeholder="출처 이름"
+                />
+                <Input
+                  required
+                  type="url"
+                  value={sourceDraft.base_url}
+                  onChange={(event) =>
+                    setSourceDraft({
+                      ...sourceDraft,
+                      base_url: event.target.value,
+                    })
+                  }
+                  placeholder="https://"
+                />
+                <NativeSelect
+                  value={sourceDraft.source_type}
+                  onChange={(event) =>
+                    setSourceDraft({
+                      ...sourceDraft,
+                      source_type: event.target
+                        .value as SourceSite['source_type'],
+                    })
+                  }
+                >
+                  <NativeSelectOption value="WEB_PAGE">
+                    웹 페이지
+                  </NativeSelectOption>
+                  <NativeSelectOption value="API">API</NativeSelectOption>
+                  <NativeSelectOption value="RSS">RSS</NativeSelectOption>
+                </NativeSelect>
+                <div className="flex items-center gap-2 rounded-xl border border-[#2F6B3F]/10 bg-white p-3 text-sm font-semibold">
+                  <Checkbox
+                    id="source-active"
+                    checked={Boolean(sourceDraft.is_active)}
+                    onCheckedChange={(value) =>
+                      setSourceDraft({
+                        ...sourceDraft,
+                        is_active: value ? 1 : 0,
+                      })
+                    }
+                  />
+                  <label htmlFor="source-active">이 출처에서 자동 수집</label>
+                </div>
+              </div>
+              <DialogFooter className="mt-5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setSourceDraft(null)}
+                >
+                  취소
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={saving}
+                  className="bg-[#2F6B3F]"
+                >
+                  저장
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+function EditorSection({
+  icon: Icon,
+  title,
+  children,
+}: {
+  icon: typeof Globe2;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section>
+      <div className="mb-3 flex items-center gap-2">
+        <span className="grid size-8 place-items-center rounded-lg bg-[#E5F1DF] text-[#2F6B3F]">
+          <Icon className="size-4" />
+        </span>
+        <h2 className="text-lg font-black text-[#204F31]">{title}</h2>
+      </div>
+      {children}
+    </section>
   );
 }

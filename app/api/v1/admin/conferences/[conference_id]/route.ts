@@ -1,21 +1,26 @@
 import { error, json } from '@/lib/api';
 import {
-  createConference,
-  listAdminConferences,
+  getAdminConference,
   readAuthenticatedUser,
   requireAdmin,
+  updateConference,
   type ConferenceInput,
 } from '@/lib/conference-repository';
 
-export async function GET(request: Request) {
+type RouteContext = { params: Promise<{ conference_id: string }> };
+
+export async function GET(request: Request, context: RouteContext) {
   const user = readAuthenticatedUser(request.headers);
   if (!user) return error(401, 'UNAUTHORIZED', '로그인이 필요합니다.');
   if (!(await requireAdmin(user)))
     return error(403, 'FORBIDDEN', '관리자 권한이 필요합니다.');
-  return json({ items: await listAdminConferences() });
+  const { conference_id: rawId } = await context.params;
+  const conference = await getAdminConference(Number(rawId));
+  if (!conference) return error(404, 'NOT_FOUND', '학회를 찾을 수 없습니다.');
+  return json(conference);
 }
 
-export async function POST(request: Request) {
+export async function PATCH(request: Request, context: RouteContext) {
   const user = readAuthenticatedUser(request.headers);
   if (!user) return error(401, 'UNAUTHORIZED', '로그인이 필요합니다.');
   const body = (await request
@@ -46,8 +51,11 @@ export async function POST(request: Request) {
       'VALIDATION_ERROR',
       '관련 링크의 이름과 URL은 필수입니다.',
     );
-  const result = await createConference(user, body);
+  const { conference_id: rawId } = await context.params;
+  const result = await updateConference(user, Number(rawId), body);
   if (result.kind === 'forbidden')
     return error(403, 'FORBIDDEN', '관리자 권한이 필요합니다.');
-  return json(result.conference, 201);
+  if (result.kind === 'not_found')
+    return error(404, 'NOT_FOUND', '학회를 찾을 수 없습니다.');
+  return json(result.conference);
 }

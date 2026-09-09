@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import {
   Bookmark,
   BookmarkCheck,
@@ -653,7 +652,13 @@ export function ConferenceWorkspace({
                 <>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
-                    render={<Link href="/admin" />}
+                    render={
+                      <button
+                        type="button"
+                        aria-label="관리자 페이지 열기"
+                        onClick={() => window.location.assign('/admin')}
+                      />
+                    }
                     className="px-2.5 py-2.5 font-semibold text-[#294432] focus:bg-[#7FB77E]/15"
                   >
                     <ShieldCheck className="text-[#2F6B3F]" /> 관리자 페이지

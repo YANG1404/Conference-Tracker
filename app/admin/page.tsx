@@ -13,7 +13,8 @@ export default async function AdminPage() {
             관리자 로그인이 필요합니다
           </h1>
           <p className="mt-3 text-sm leading-6 text-[#68746B]">
-            학회 정보 검수와 편집 기능은 허용된 관리자만 사용할 수 있습니다.
+            학회 정보와 공식 일정 편집 기능은 허용된 관리자만 사용할 수
+            있습니다.
           </p>
           <a
             href={chatGPTSignInPath('/admin')}

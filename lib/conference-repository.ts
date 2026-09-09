@@ -15,6 +15,29 @@ export type ConferenceInput = {
   venue?: string | null;
   format: 'ONSITE' | 'ONLINE' | 'HYBRID';
   status?: 'DRAFT' | 'PUBLISHED' | 'HIDDEN';
+  research_field_ids?: number[];
+  primary_research_field_id?: number | null;
+  milestones?: Array<{
+    group_name?: string | null;
+    title: string;
+    event_at: string;
+    original_timezone: string;
+    time_confirmed?: boolean;
+    note?: string | null;
+  }>;
+  links?: Array<{
+    type: string;
+    label: string;
+    url: string;
+    is_active?: boolean;
+  }>;
+};
+
+export type SourceSiteInput = {
+  name: string;
+  base_url: string;
+  source_type: 'API' | 'RSS' | 'WEB_PAGE';
+  is_active?: boolean;
 };
 
 function db(): D1Database {
@@ -707,7 +730,151 @@ export async function createConference(
       current.id,
     )
     .first<Record<string, unknown>>();
+  if (!result) throw new Error('학회 생성에 실패했습니다.');
+  await replaceConferenceRelations(Number(result.id), input);
   return { kind: 'ok' as const, conference: result };
+}
+
+async function replaceConferenceRelations(
+  conferenceId: number,
+  input: Pick<
+    ConferenceInput,
+    'research_field_ids' | 'primary_research_field_id' | 'milestones' | 'links'
+  >,
+) {
+  const statements: D1PreparedStatement[] = [
+    db()
+      .prepare('DELETE FROM conference_research_fields WHERE conference_id = ?')
+      .bind(conferenceId),
+    db()
+      .prepare('DELETE FROM milestones WHERE conference_id = ?')
+      .bind(conferenceId),
+    db()
+      .prepare('DELETE FROM conference_links WHERE conference_id = ?')
+      .bind(conferenceId),
+  ];
+  const fieldIds = [...new Set(input.research_field_ids ?? [])];
+  for (const fieldId of fieldIds) {
+    statements.push(
+      db()
+        .prepare(
+          'INSERT INTO conference_research_fields (conference_id, research_field_id, is_primary) VALUES (?, ?, ?)',
+        )
+        .bind(
+          conferenceId,
+          fieldId,
+          fieldId === input.primary_research_field_id ? 1 : 0,
+        ),
+    );
+  }
+  for (const milestone of input.milestones ?? []) {
+    statements.push(
+      db()
+        .prepare(
+          "INSERT INTO milestones (conference_id, type, group_name, title, event_at, original_timezone, time_confirmed, note) VALUES (?, 'OFFICIAL_DATE', ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(
+          conferenceId,
+          milestone.group_name?.trim() || null,
+          milestone.title.trim(),
+          milestone.event_at,
+          milestone.original_timezone.trim(),
+          milestone.time_confirmed === false ? 0 : 1,
+          milestone.note?.trim() || null,
+        ),
+    );
+  }
+  for (const link of input.links ?? []) {
+    statements.push(
+      db()
+        .prepare(
+          'INSERT INTO conference_links (conference_id, type, label, url, is_active) VALUES (?, ?, ?, ?, ?)',
+        )
+        .bind(
+          conferenceId,
+          link.type,
+          link.label.trim(),
+          link.url.trim(),
+          link.is_active === false ? 0 : 1,
+        ),
+    );
+  }
+  await db().batch(statements);
+}
+
+export async function getAdminConference(conferenceId: number) {
+  await ensureDemoData();
+  const conference = await db()
+    .prepare('SELECT * FROM conferences WHERE id = ?')
+    .bind(conferenceId)
+    .first<Record<string, unknown>>();
+  if (!conference) return null;
+  const [fields, milestoneRows, links] = await Promise.all([
+    db()
+      .prepare(
+        'SELECT research_field_id, is_primary FROM conference_research_fields WHERE conference_id = ? ORDER BY is_primary DESC, research_field_id',
+      )
+      .bind(conferenceId)
+      .all<Record<string, unknown>>(),
+    db()
+      .prepare(
+        'SELECT id, group_name, title, event_at, original_timezone, time_confirmed, note FROM milestones WHERE conference_id = ? ORDER BY event_at',
+      )
+      .bind(conferenceId)
+      .all<Record<string, unknown>>(),
+    db()
+      .prepare(
+        'SELECT id, type, label, url, is_active FROM conference_links WHERE conference_id = ? ORDER BY type, label',
+      )
+      .bind(conferenceId)
+      .all<Record<string, unknown>>(),
+  ]);
+  return {
+    ...conference,
+    research_fields: fields.results,
+    milestones: milestoneRows.results,
+    links: links.results,
+  };
+}
+
+export async function updateConference(
+  user: AuthenticatedUser,
+  conferenceId: number,
+  input: ConferenceInput,
+) {
+  await ensureDemoData();
+  const current = await requireAdmin(user);
+  if (!current) return { kind: 'forbidden' as const };
+  const existing = await db()
+    .prepare('SELECT id FROM conferences WHERE id = ?')
+    .bind(conferenceId)
+    .first<{ id: number }>();
+  if (!existing) return { kind: 'not_found' as const };
+  await db()
+    .prepare(`
+      UPDATE conferences
+      SET name = ?, acronym = ?, edition_year = ?, description = ?, country_code = ?, city = ?, venue = ?, format = ?, status = ?, verified_by = ?, last_verified_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `)
+    .bind(
+      input.name,
+      input.acronym ?? null,
+      input.edition_year ?? null,
+      input.description ?? null,
+      input.country_code,
+      input.city ?? null,
+      input.venue ?? null,
+      input.format,
+      input.status ?? 'DRAFT',
+      current.id,
+      conferenceId,
+    )
+    .run();
+  await replaceConferenceRelations(conferenceId, input);
+  return {
+    kind: 'ok' as const,
+    conference: await getAdminConference(conferenceId),
+  };
 }
 
 export async function listSources() {
@@ -717,6 +884,52 @@ export async function listSources() {
       .prepare('SELECT * FROM source_sites ORDER BY name')
       .all<Record<string, unknown>>()
   ).results;
+}
+
+export async function createSourceSite(
+  user: AuthenticatedUser,
+  input: SourceSiteInput,
+) {
+  await ensureDemoData();
+  if (!(await requireAdmin(user))) return { kind: 'forbidden' as const };
+  const source = await db()
+    .prepare(
+      'INSERT INTO source_sites (name, base_url, source_type, is_active) VALUES (?, ?, ?, ?) RETURNING *',
+    )
+    .bind(
+      input.name,
+      input.base_url,
+      input.source_type,
+      input.is_active === false ? 0 : 1,
+    )
+    .first<Record<string, unknown>>();
+  return { kind: 'ok' as const, source };
+}
+
+export async function updateSourceSite(
+  user: AuthenticatedUser,
+  sourceSiteId: number,
+  input: SourceSiteInput,
+) {
+  await ensureDemoData();
+  if (!(await requireAdmin(user))) return { kind: 'forbidden' as const };
+  const source = await db()
+    .prepare(`
+      UPDATE source_sites
+      SET name = ?, base_url = ?, source_type = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+      RETURNING *
+    `)
+    .bind(
+      input.name,
+      input.base_url,
+      input.source_type,
+      input.is_active === false ? 0 : 1,
+      sourceSiteId,
+    )
+    .first<Record<string, unknown>>();
+  if (!source) return { kind: 'not_found' as const };
+  return { kind: 'ok' as const, source };
 }
 
 export async function listResearchFields() {
@@ -734,31 +947,36 @@ export async function listAdminConferences() {
   await ensureDemoData();
   return (
     await db()
-      .prepare('SELECT * FROM conferences ORDER BY updated_at DESC, id DESC')
+      .prepare(`
+        SELECT c.*,
+          (SELECT COUNT(*) FROM milestones m WHERE m.conference_id = c.id) AS milestone_count,
+          (SELECT MIN(m.event_at) FROM milestones m WHERE m.conference_id = c.id AND m.event_at >= CURRENT_TIMESTAMP) AS next_milestone_at,
+          (SELECT COUNT(*) FROM conference_research_fields crf WHERE crf.conference_id = c.id) AS research_field_count
+        FROM conferences c
+        ORDER BY c.updated_at DESC, c.id DESC
+      `)
       .all<Record<string, unknown>>()
   ).results;
 }
 
 export async function getAdminStats() {
   await ensureDemoData();
-  const [pending, published, sources] = await Promise.all([
-    db()
-      .prepare(
-        "SELECT COUNT(*) AS count FROM collection_candidates WHERE review_status = 'PENDING'",
-      )
-      .first<{ count: number }>(),
+  const [published, milestones, sources] = await Promise.all([
     db()
       .prepare(
         "SELECT COUNT(*) AS count FROM conferences WHERE status = 'PUBLISHED'",
       )
       .first<{ count: number }>(),
     db()
+      .prepare('SELECT COUNT(*) AS count FROM milestones')
+      .first<{ count: number }>(),
+    db()
       .prepare('SELECT COUNT(*) AS count FROM source_sites WHERE is_active = 1')
       .first<{ count: number }>(),
   ]);
   return {
-    pending_candidates: pending?.count ?? 0,
     published_conferences: published?.count ?? 0,
+    total_milestones: milestones?.count ?? 0,
     active_sources: sources?.count ?? 0,
   };
 }
