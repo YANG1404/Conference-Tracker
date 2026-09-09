@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import {
   Bookmark,
   BookmarkCheck,
@@ -63,12 +63,16 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 
+import { displayDay, dayDifference, monthGrid } from '@/lib/schedule-time';
+
 type Milestone = {
   id: number;
   type: string;
   groupName: string | null;
   title: string;
   eventAt: string;
+  endAt: string | null;
+  sourceUrl: string | null;
   originalTimezone: string;
   timeConfirmed: boolean;
   dDay: number;
@@ -79,8 +83,9 @@ type Conference = {
   acronym: string;
   name: string;
   category: string;
-  region: '국내' | '해외';
-  format: '온라인' | '오프라인' | '하이브리드';
+  categories: string[];
+  region: '국내' | '해외' | '미확인';
+  format: '온라인' | '오프라인' | '하이브리드' | '미확인';
   location: string;
   description: string;
   links: { label: string; url: string }[];
@@ -94,6 +99,8 @@ type ApiMilestone = {
   group_name: string | null;
   title: string | null;
   event_at: string;
+  end_at: string | null;
+  source_url: string | null;
   original_timezone: string;
   time_confirmed: boolean;
   d_day: number;
@@ -106,7 +113,7 @@ type ApiConference = {
   description: string | null;
   country_code: string;
   city: string | null;
-  format: 'ONSITE' | 'ONLINE' | 'HYBRID';
+  format: 'ONSITE' | 'ONLINE' | 'HYBRID' | 'UNKNOWN';
   is_domestic: boolean;
   research_fields: Array<{ name_ko: string }>;
   milestones: ApiMilestone[];
@@ -115,148 +122,7 @@ type ApiConference = {
 
 type SelectedEvent = { conferenceId: number; milestoneId: number };
 
-const chiMilestones: Milestone[] = [
-  [1, 'Papers', 'Submission Due', '2026-09-10T23:59:00Z', true],
-  [7, 'Papers', 'Reviews Released', '2026-11-05T12:00:00Z', false],
-  [8, 'Papers', 'Resubmission Due', '2026-12-03T23:59:00Z', true],
-  [9, 'Papers', 'Notification', '2026-12-17T12:00:00Z', false],
-  [14, 'Panels', 'Submission Due', '2026-11-19T23:59:00Z', true],
-  [16, 'Workshops', 'Organizer Submission Due', '2026-10-01T23:59:00Z', true],
-  [17, 'Workshops', 'Notification', '2026-11-19T12:00:00Z', false],
-  [
-    18,
-    'Workshops',
-    'Accepted Workshops Websites Up',
-    '2026-12-17T12:00:00Z',
-    false,
-  ],
-].map(([id, groupName, title, eventAt, timeConfirmed]) => ({
-  id: Number(id),
-  type: 'OFFICIAL_EVENT',
-  groupName: String(groupName),
-  title: String(title),
-  eventAt: String(eventAt),
-  originalTimezone: 'AoE',
-  timeConfirmed: Boolean(timeConfirmed),
-  dDay: dayOffset(String(eventAt)),
-}));
-
-const demoConferences: Conference[] = [
-  {
-    id: 1,
-    acronym: 'CHI 2027',
-    name: 'ACM Conference on Human Factors in Computing Systems',
-    category: '인간 중심 컴퓨팅',
-    region: '해외',
-    format: '오프라인',
-    location: 'Barcelona, Spain',
-    description: '사람과 컴퓨팅 기술의 상호작용을 다루는 국제 학술대회입니다.',
-    links: [
-      { label: '공식 홈페이지', url: 'https://chi2027.acm.org/' },
-      { label: '논문 제출', url: 'https://new.precisionconference.com/' },
-    ],
-    milestones: chiMilestones,
-    tone: 'green',
-  },
-  ...[
-    [
-      2,
-      'KSC 2026',
-      '한국소프트웨어종합학술대회',
-      '소프트웨어 및 소프트웨어 공학',
-      '국내',
-      '오프라인',
-      'Jeju, KR',
-      'Regular Papers',
-      'Submission Opens',
-      '2026-09-08T00:00:00Z',
-      'Asia/Seoul',
-      'mint',
-    ],
-    [
-      3,
-      'AAAI 2027',
-      'AAAI Conference on Artificial Intelligence',
-      '컴퓨팅 방법론',
-      '해외',
-      '하이브리드',
-      'Vancouver, CA',
-      'Main Track',
-      'Submission Deadline',
-      '2026-09-12T23:59:00Z',
-      'AoE',
-      'gold',
-    ],
-    [
-      4,
-      'ICSE 2027',
-      'International Conference on Software Engineering',
-      '소프트웨어 및 소프트웨어 공학',
-      '국내',
-      '오프라인',
-      'Seoul, KR',
-      'Research Track',
-      'Author Notification',
-      '2026-09-18T17:00:00Z',
-      'UTC',
-      'green',
-    ],
-    [
-      5,
-      'NeurIPS 2026',
-      'Conference on Neural Information Processing Systems',
-      '컴퓨팅 방법론',
-      '해외',
-      '하이브리드',
-      'San Diego, US',
-      'Authors',
-      'Author Registration Deadline',
-      '2026-09-22T23:59:00Z',
-      'AoE',
-      'gold',
-    ],
-    [
-      6,
-      'UIST 2026',
-      'ACM Symposium on User Interface Software and Technology',
-      '인간 중심 컴퓨팅',
-      '국내',
-      '오프라인',
-      'Busan, KR',
-      'Technical Papers',
-      'Final Submission Deadline',
-      '2026-09-25T23:59:00Z',
-      'AoE',
-      'mint',
-    ],
-  ].map((item) => ({
-    id: Number(item[0]),
-    acronym: String(item[1]),
-    name: String(item[2]),
-    category: String(item[3]),
-    region: item[4] as Conference['region'],
-    format: item[5] as Conference['format'],
-    location: String(item[6]),
-    description: '컴퓨팅 분야 연구 성과를 공유하는 학술대회입니다.',
-    links: [{ label: '공식 홈페이지', url: '#' }],
-    milestones: [
-      {
-        id: Number(item[0]),
-        type: 'OFFICIAL_EVENT',
-        groupName: String(item[7]),
-        title: String(item[8]),
-        eventAt: String(item[9]),
-        originalTimezone: String(item[10]),
-        timeConfirmed: true,
-        dDay: dayOffset(String(item[9])),
-      },
-    ],
-    tone: item[11] as Conference['tone'],
-  })),
-];
-
 const weekDays = ['일', '월', '화', '수', '목', '금', '토'];
-const calendarDays = Array.from({ length: 35 }, (_, index) => index - 1);
 const categories = [
   '일반 및 참조',
   '하드웨어',
@@ -273,23 +139,7 @@ const categories = [
   '사회 및 전문 주제',
 ];
 
-function dayOffset(eventAt: string) {
-  const eventDate = eventAt.slice(0, 10);
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Seoul',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date());
-  const value = Object.fromEntries(
-    parts.map((part) => [part.type, part.value]),
-  );
-  const today = `${value.year}-${value.month}-${value.day}`;
-  return Math.round(
-    (Date.parse(`${eventDate}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) /
-      86_400_000,
-  );
-}
+const dayOffset = dayDifference;
 
 function dDayLabel(value: number) {
   if (value === 0) return 'D-Day';
@@ -308,13 +158,13 @@ function formatDate(milestone: Milestone, compact = false) {
         day: 'numeric',
         hour: '2-digit',
         minute: '2-digit',
-        timeZone: 'UTC',
+        timeZone: milestone.timeConfirmed ? 'Asia/Seoul' : 'UTC',
       }
     : {
         year: compact ? undefined : 'numeric',
         month: compact ? 'numeric' : 'long',
         day: 'numeric',
-        timeZone: 'UTC',
+        timeZone: milestone.timeConfirmed ? 'Asia/Seoul' : 'UTC',
       };
   return new Intl.DateTimeFormat('ko-KR', options).format(
     new Date(milestone.eventAt),
@@ -326,20 +176,20 @@ function formatDeadlineDate(milestone: Milestone) {
     year: 'numeric',
     month: 'numeric',
     day: 'numeric',
-    timeZone: 'UTC',
+    timeZone: milestone.timeConfirmed ? 'Asia/Seoul' : 'UTC',
   }).format(new Date(milestone.eventAt));
 }
 
 function formatDeadlineTime(milestone: Milestone) {
-  if (!milestone.timeConfirmed) return milestone.originalTimezone;
+  if (!milestone.timeConfirmed) return '시각 미정 · 원본 날짜';
 
   const time = new Intl.DateTimeFormat('ko-KR', {
     hour: '2-digit',
     minute: '2-digit',
-    timeZone: 'UTC',
+    timeZone: milestone.timeConfirmed ? 'Asia/Seoul' : 'UTC',
   }).format(new Date(milestone.eventAt));
 
-  return `${time} · ${milestone.originalTimezone}`;
+  return `${time} KST · 원본 ${milestone.originalTimezone}`;
 }
 
 function EventPill({
@@ -382,6 +232,8 @@ export function ConferenceWorkspace({
   isAuthenticated,
   isAdmin,
   initialConferenceId,
+  initialYear,
+  initialMonth,
 }: {
   userName: string | null;
   userEmail: string | null;
@@ -389,9 +241,37 @@ export function ConferenceWorkspace({
   isAuthenticated: boolean;
   isAdmin: boolean;
   initialConferenceId: number | null;
+  initialYear: number;
+  initialMonth: number;
 }) {
-  const [conferenceItems, setConferenceItems] =
-    useState<Conference[]>(demoConferences);
+  const [conferenceItems, setConferenceItems] = useState<Conference[]>([]);
+  const [calendarMonth, setCalendarMonth] = useState({
+    year: initialYear,
+    month: initialMonth,
+  });
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [retry, setRetry] = useState(0);
+  const [expandedDays, setExpandedDays] = useState<string[]>([]);
+  const openedInitial = useRef(false);
+  const { year, month } = calendarMonth;
+  const calendarDays = monthGrid(year, month);
+  const monthStart = `${year}-${String(month).padStart(2, '0')}-01`;
+  const monthEnd = calendarDays.filter((day) => day.valid).at(-1)!.date;
+  function goMonth(nextYear: number, nextMonth: number) {
+    const date = new Date(Date.UTC(nextYear, nextMonth - 1, 1));
+    if (date.getUTCFullYear() < 1900 || date.getUTCFullYear() > 2100) return;
+    setCalendarMonth({
+      year: date.getUTCFullYear(),
+      month: date.getUTCMonth() + 1,
+    });
+    setSelectedEvent(null);
+    setExpandedDays([]);
+    const url = new URL(window.location.href);
+    url.searchParams.set('year', String(date.getUTCFullYear()));
+    url.searchParams.set('month', String(date.getUTCMonth() + 1));
+    window.history.replaceState(null, '', url);
+  }
   const [query, setQuery] = useState('');
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [region, setRegion] = useState('전체 지역');
@@ -407,12 +287,7 @@ export function ConferenceWorkspace({
   const [loginReturnConferenceId, setLoginReturnConferenceId] = useState<
     number | null
   >(null);
-  const currentCalendarDay = Number(
-    new Intl.DateTimeFormat('en-US', {
-      timeZone: 'Asia/Seoul',
-      day: '2-digit',
-    }).format(new Date()),
-  );
+  const todayDate = displayDay(new Date().toISOString());
 
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -423,7 +298,9 @@ export function ConferenceWorkspace({
         conference.name.toLowerCase().includes(normalized);
       const matchesCategory =
         selectedCategories.length === 0 ||
-        selectedCategories.includes(conference.category);
+        conference.categories.some((category) =>
+          selectedCategories.includes(category),
+        );
       const matchesRegion =
         region === '전체 지역' || conference.region === region;
       const matchesFormat =
@@ -452,11 +329,19 @@ export function ConferenceWorkspace({
       filtered
         .flatMap((conference) =>
           conference.milestones
-            .filter((milestone) => milestone.eventAt.startsWith('2026-09'))
+            .filter(
+              (milestone) =>
+                displayDay(milestone.eventAt, milestone.timeConfirmed) <=
+                  monthEnd &&
+                displayDay(
+                  milestone.endAt || milestone.eventAt,
+                  milestone.timeConfirmed,
+                ) >= monthStart,
+            )
             .map((milestone) => ({ conference, milestone })),
         )
         .sort((a, b) => a.milestone.eventAt.localeCompare(b.milestone.eventAt)),
-    [filtered],
+    [filtered, monthStart, monthEnd],
   );
 
   const selected = selectedEvent
@@ -474,31 +359,66 @@ export function ConferenceWorkspace({
       : null;
 
   useEffect(() => {
-    fetch('/api/v1/conferences')
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      setLoading(true);
+      setLoadError('');
+      setConferenceItems([]);
+    }, 0);
+    fetch(
+      `/api/v1/conferences/calendar?date_from=${monthStart}&date_to=${monthEnd}`,
+      { signal: controller.signal },
+    )
       .then(async (response) =>
         response.ok
           ? ((await response.json()) as { items: ApiConference[] })
-          : null,
+          : Promise.reject(
+              new Error('일정을 불러오지 못했습니다. 다시 시도해주세요.'),
+            ),
       )
+      .then(async (data) => {
+        if (
+          data &&
+          initialConferenceId &&
+          !openedInitial.current &&
+          !data.items.some((item) => item.id === initialConferenceId)
+        ) {
+          const detail = await fetch(
+            '/api/v1/conferences/' + initialConferenceId,
+            { signal: controller.signal },
+          );
+          if (detail.ok)
+            data.items.push((await detail.json()) as ApiConference);
+        }
+        return data;
+      })
       .then((data) => {
-        if (!data?.items?.length) return;
+        if (!data || controller.signal.aborted) return;
         const tones: Conference['tone'][] = ['green', 'mint', 'gold'];
         setConferenceItems(
           data.items.map((item, index) => {
             const categoryName =
-              item.research_fields?.[0]?.name_ko ?? '일반 및 참조';
+              item.research_fields?.[0]?.name_ko ?? '분야 미지정';
             return {
               id: item.id,
               acronym: item.acronym ?? item.name,
               name: item.name,
               category: categoryName,
-              region: item.is_domestic ? '국내' : '해외',
+              categories: item.research_fields.map((field) => field.name_ko),
+              region:
+                item.country_code === 'ZZ'
+                  ? '미확인'
+                  : item.is_domestic
+                    ? '국내'
+                    : '해외',
               format:
-                item.format === 'ONLINE'
-                  ? '온라인'
-                  : item.format === 'HYBRID'
-                    ? '하이브리드'
-                    : '오프라인',
+                item.format === 'UNKNOWN'
+                  ? '미확인'
+                  : item.format === 'ONLINE'
+                    ? '온라인'
+                    : item.format === 'HYBRID'
+                      ? '하이브리드'
+                      : '오프라인',
               location: [item.city, item.country_code]
                 .filter(Boolean)
                 .join(', '),
@@ -514,6 +434,8 @@ export function ConferenceWorkspace({
                 groupName: milestone.group_name,
                 title: milestone.title ?? 'Official schedule',
                 eventAt: milestone.event_at,
+                endAt: milestone.end_at,
+                sourceUrl: milestone.source_url,
                 originalTimezone: milestone.original_timezone,
                 timeConfirmed: milestone.time_confirmed,
                 dDay: milestone.d_day ?? dayOffset(milestone.event_at),
@@ -523,8 +445,19 @@ export function ConferenceWorkspace({
           }),
         );
       })
-      .catch(() => undefined);
+      .catch((cause) => {
+        if (!controller.signal.aborted) setLoadError(cause.message);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [monthStart, monthEnd, retry, initialConferenceId]);
 
+  useEffect(() => {
     if (isAuthenticated) {
       fetch('/api/v1/me/pins')
         .then(async (response) =>
@@ -544,12 +477,13 @@ export function ConferenceWorkspace({
   }, [isAuthenticated]);
 
   useEffect(() => {
-    if (!initialConferenceId || selectedEvent) return;
+    if (!initialConferenceId || openedInitial.current) return;
     const conference = conferenceItems.find(
       (item) => item.id === initialConferenceId,
     );
     const milestone = conference?.milestones[0];
     if (!conference || !milestone) return;
+    openedInitial.current = true;
     const timeout = window.setTimeout(
       () =>
         setSelectedEvent({
@@ -821,9 +755,11 @@ export function ConferenceWorkspace({
               <div>
                 <div className="mb-2 flex items-center gap-2">
                   <Badge className="bg-[#7FB77E]/18 text-[#2F6B3F] hover:bg-[#7FB77E]/18">
-                    2026년 9월
+                    {year}년 {month}월
                   </Badge>
-                  <span className="text-xs text-[#748078]">예시 일정</span>
+                  <span className="text-xs text-[#748078]">
+                    한국 시간(KST) · 날짜만 있는 일정은 원본 기준
+                  </span>
                 </div>
                 <h1 className="text-2xl font-black tracking-[-0.035em] text-[#183E28] sm:text-3xl">
                   학회 일정을 한눈에 관리하세요
@@ -834,22 +770,44 @@ export function ConferenceWorkspace({
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    goMonth(
+                      Number(todayDate.slice(0, 4)),
+                      Number(todayDate.slice(5, 7)),
+                    )
+                  }
+                >
+                  오늘
+                </Button>
                 <div className="flex items-center rounded-xl border border-[#2F6B3F]/12 bg-white p-1 shadow-sm">
                   <Button
                     variant="ghost"
                     size="icon-sm"
                     aria-label="이전 달"
+                    onClick={() => goMonth(year, month - 1)}
                     className="text-[#2F6B3F]"
                   >
                     <ChevronLeft />
                   </Button>
-                  <span className="min-w-28 text-center text-sm font-bold">
-                    2026년 9월
-                  </span>
+                  <input
+                    aria-label="연도와 월 선택"
+                    type="month"
+                    min="1900-01"
+                    max="2100-12"
+                    value={monthStart.slice(0, 7)}
+                    onChange={(event) => {
+                      const [y, m] = event.target.value.split('-').map(Number);
+                      if (y && m) goMonth(y, m);
+                    }}
+                    className="w-36 bg-transparent px-2 text-sm font-bold"
+                  />
                   <Button
                     variant="ghost"
                     size="icon-sm"
                     aria-label="다음 달"
+                    onClick={() => goMonth(year, month + 1)}
                     className="text-[#2F6B3F]"
                   >
                     <ChevronRight />
@@ -1046,6 +1004,22 @@ export function ConferenceWorkspace({
               </div>
             </div>
 
+            {loading && (
+              <output className="mt-5 block text-sm">
+                일정을 불러오는 중입니다…
+              </output>
+            )}
+            {loadError && (
+              <div role="alert" className="mt-5 rounded-xl bg-amber-50 p-4">
+                {loadError}{' '}
+                <Button
+                  variant="outline"
+                  onClick={() => setRetry((n) => n + 1)}
+                >
+                  다시 시도
+                </Button>
+              </div>
+            )}
             {view === 'calendar' ? (
               <div className="mt-5 overflow-hidden rounded-2xl border border-[#2F6B3F]/12 bg-white shadow-[0_16px_45px_rgba(47,107,63,0.08)]">
                 <div className="grid grid-cols-7 border-b border-[#2F6B3F]/10 bg-[#FFF9DA]">
@@ -1059,13 +1033,20 @@ export function ConferenceWorkspace({
                   ))}
                 </div>
                 <div className="grid grid-cols-7">
-                  {calendarDays.map((day, index) => {
+                  {calendarDays.map(({ day, valid, date }, index) => {
                     const events = calendarEvents.filter(
                       ({ milestone }) =>
-                        Number(milestone.eventAt.slice(8, 10)) === day,
+                        valid &&
+                        displayDay(
+                          milestone.eventAt,
+                          milestone.timeConfirmed,
+                        ) <= date &&
+                        displayDay(
+                          milestone.endAt || milestone.eventAt,
+                          milestone.timeConfirmed,
+                        ) >= date,
                     );
-                    const valid = day >= 1 && day <= 30;
-                    const today = day === currentCalendarDay;
+                    const today = date === todayDate;
                     return (
                       <div
                         key={`${day}-${index}`}
@@ -1086,7 +1067,10 @@ export function ConferenceWorkspace({
                           </div>
                         )}
                         <div className="space-y-1.5">
-                          {events.map(({ conference, milestone }) => (
+                          {(expandedDays.includes(date)
+                            ? events
+                            : events.slice(0, 3)
+                          ).map(({ conference, milestone }) => (
                             <EventPill
                               key={`${conference.id}-${milestone.id}`}
                               conference={conference}
@@ -1094,6 +1078,23 @@ export function ConferenceWorkspace({
                               onSelect={setSelectedEvent}
                             />
                           ))}
+                          {events.length > 3 && (
+                            <button
+                              type="button"
+                              className="text-xs font-bold text-[#2F6B3F]"
+                              onClick={() =>
+                                setExpandedDays((days) =>
+                                  days.includes(date)
+                                    ? days.filter((d) => d !== date)
+                                    : [...days, date],
+                                )
+                              }
+                            >
+                              {expandedDays.includes(date)
+                                ? '접기'
+                                : `+${events.length - 3}개 더 보기`}
+                            </button>
+                          )}
                         </div>
                       </div>
                     );
@@ -1138,7 +1139,12 @@ export function ConferenceWorkspace({
                         {formatDate(milestone, true)}
                       </p>
                       <p className="mt-1 text-xs text-[#778179]">
-                        {milestone.originalTimezone}
+                        {milestone.timeConfirmed
+                          ? `KST · 원본 ${milestone.originalTimezone}`
+                          : '원본 날짜 · 시각 미정'}
+                        {milestone.endAt
+                          ? ` ~ ${displayDay(milestone.endAt, milestone.timeConfirmed)}`
+                          : ''}
                       </p>
                     </div>
                   </button>
@@ -1146,12 +1152,15 @@ export function ConferenceWorkspace({
               </div>
             )}
 
-            {filtered.length === 0 && (
+            {!loading && !loadError && calendarEvents.length === 0 && (
               <div className="mt-5 rounded-2xl border border-dashed border-[#7FB77E] bg-white px-6 py-16 text-center">
                 <Search className="mx-auto size-8 text-[#7FB77E]" />
-                <h2 className="mt-4 font-bold">조건에 맞는 학회가 없습니다</h2>
+                <h2 className="mt-4 font-bold">
+                  이 달에 조건에 맞는 공개 일정이 없습니다
+                </h2>
                 <p className="mt-1 text-sm text-[#6D786F]">
-                  필터를 줄이거나 검색어를 바꿔보세요.
+                  다른 달로 이동하거나 필터를 변경하세요. 수집 전·미공개 일정은
+                  표시되지 않습니다.
                 </p>
                 <Button className="mt-5 bg-[#2F6B3F]" onClick={resetFilters}>
                   필터 초기화
@@ -1159,7 +1168,8 @@ export function ConferenceWorkspace({
               </div>
             )}
             <p className="mt-4 text-center text-xs text-[#879087]">
-              현재 화면의 일정은 기능 확인을 위한 예시 데이터입니다.
+              공개된 수집 일정만 표시합니다. 최종 마감일은 학회 공식
+              홈페이지에서 확인하세요.
             </p>
           </section>
         </main>
@@ -1192,7 +1202,7 @@ export function ConferenceWorkspace({
               className="bg-[#2F6B3F] text-white hover:bg-[#245632]"
               onClick={() => {
                 const returnTo = loginReturnConferenceId
-                  ? `/?conference=${loginReturnConferenceId}`
+                  ? `/?conference=${loginReturnConferenceId}&year=${year}&month=${month}`
                   : '/';
                 window.location.assign(
                   `/login?return_to=${encodeURIComponent(returnTo)}`,
@@ -1269,7 +1279,10 @@ export function ConferenceWorkspace({
                   <div className="mt-3 flex items-center gap-2 text-sm text-[#675522]">
                     <Clock3 className="size-4" />{' '}
                     {formatDate(selectedMilestone)} (
-                    {selectedMilestone.originalTimezone})
+                    {selectedMilestone.timeConfirmed
+                      ? `KST · 원본 ${selectedMilestone.originalTimezone}`
+                      : '원본 날짜 · 시각 미정'}
+                    )
                   </div>
                 </div>
                 <div className="mt-6 space-y-4 text-sm">
@@ -1324,17 +1337,30 @@ export function ConferenceWorkspace({
                             <p className="break-words text-sm font-bold leading-5 text-[#294432]">
                               {milestoneLabel(milestone)}
                             </p>
+                            {milestone.sourceUrl && (
+                              <a
+                                href={milestone.sourceUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-xs text-[#2F6B3F] underline"
+                              >
+                                출처 확인
+                              </a>
+                            )}
                             <p className="mt-0.5 text-xs text-[#7B867E] sm:hidden">
                               {formatDate(milestone)} ·{' '}
-                              {milestone.originalTimezone}
+                              {milestone.timeConfirmed ? 'KST' : '원본 날짜'}
                             </p>
                           </div>
                           <p className="hidden min-w-0 text-xs leading-5 text-[#667168] sm:block">
                             <span className="whitespace-nowrap">
                               {formatDeadlineDate(milestone)}
+                              {milestone.endAt
+                                ? ` ~ ${displayDay(milestone.endAt, milestone.timeConfirmed)}`
+                                : ''}
                             </span>
                             <br />
-                            <span className="whitespace-nowrap text-[#899188]">
+                            <span className="break-words text-[#899188]">
                               {formatDeadlineTime(milestone)}
                             </span>
                           </p>

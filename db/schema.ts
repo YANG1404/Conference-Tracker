@@ -89,7 +89,9 @@ export const conferences = sqliteTable(
     countryCode: text('country_code').notNull(),
     city: text('city'),
     venue: text('venue'),
-    format: text('format', { enum: ['ONSITE', 'ONLINE', 'HYBRID'] }).notNull(),
+    format: text('format', {
+      enum: ['ONSITE', 'ONLINE', 'HYBRID', 'UNKNOWN'],
+    }).notNull(),
     status: text('status', { enum: ['DRAFT', 'PUBLISHED', 'HIDDEN'] })
       .notNull()
       .default('DRAFT'),
@@ -218,6 +220,10 @@ export const milestones = sqliteTable(
       .notNull()
       .default(true),
     note: text('note'),
+    sourceUrl: text('source_url'),
+    sourceText: text('source_text'),
+    sourceKind: text('source_kind'),
+    externalKey: text('external_key'),
     createdAt: text('created_at')
       .notNull()
       .default(sql`CURRENT_TIMESTAMP`),
@@ -417,3 +423,30 @@ export const catalogSyncState = sqliteTable('catalog_sync_state', {
   lastSyncedAt: text('last_synced_at'),
   errorMessage: text('error_message'),
 });
+
+// Collector snapshots are separate from published milestones.
+export const scheduleFeeds = sqliteTable(
+  'schedule_feeds',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    sourceKey: text('source_key').notNull(),
+    conferenceId: integer('conference_id').references(() => conferences.id, {
+      onDelete: 'cascade',
+    }),
+    kind: text('kind').notNull(),
+    url: text('url').notNull(),
+    enabled: integer('enabled').notNull().default(0),
+    payload: text('payload'),
+    contentHash: text('content_hash'),
+    lastCheckedAt: text('last_checked_at'),
+    lastSuccessAt: text('last_success_at'),
+    nextCheckAt: text('next_check_at'),
+    leaseUntil: text('lease_until'),
+    status: text('status').notNull().default('IDLE'),
+    errorMessage: text('error_message'),
+  },
+  (table) => [
+    uniqueIndex('uq_schedule_feed_key').on(table.sourceKey),
+    index('idx_schedule_feeds_due').on(table.enabled, table.nextCheckAt),
+  ],
+);

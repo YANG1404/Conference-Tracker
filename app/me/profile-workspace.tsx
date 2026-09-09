@@ -1,4 +1,5 @@
 'use client';
+import { dayDifference } from '@/lib/schedule-time';
 
 import { useMemo, useState } from 'react';
 import {
@@ -57,19 +58,7 @@ export type Profile = {
 
 function dDay(value: string | null) {
   if (!value) return '예정 없음';
-  const now = new Date();
-  const today = Date.UTC(
-    now.getUTCFullYear(),
-    now.getUTCMonth(),
-    now.getUTCDate(),
-  );
-  const event = new Date(value);
-  const target = Date.UTC(
-    event.getUTCFullYear(),
-    event.getUTCMonth(),
-    event.getUTCDate(),
-  );
-  const days = Math.round((target - today) / 86_400_000);
+  const days = dayDifference(value);
   if (days === 0) return 'D-Day';
   return days > 0 ? `D-${days}` : `D+${Math.abs(days)}`;
 }
@@ -80,9 +69,9 @@ function formatDate(value: string | null) {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'Asia/Seoul',
+    hour: value.length > 10 ? '2-digit' : undefined,
+    minute: value.length > 10 ? '2-digit' : undefined,
+    timeZone: value.length > 10 ? 'Asia/Seoul' : 'UTC',
   }).format(new Date(value));
 }
 

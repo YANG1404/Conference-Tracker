@@ -1,3 +1,4 @@
+import { overlaps } from '@/lib/schedule-time';
 import { error, json } from '@/lib/api';
 import { getConferenceViews } from '@/lib/conference-service';
 import { getRepositoryUser } from '@/lib/google-auth';
@@ -7,26 +8,30 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const from = url.searchParams.get('date_from');
     const to = url.searchParams.get('date_to');
-    if (!from || !to || from > to)
+    if (
+      !from ||
+      !to ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(from) ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(to) ||
+      !Number.isFinite(Date.parse(from)) ||
+      !Number.isFinite(Date.parse(to)) ||
+      from > to ||
+      Date.parse(to) - Date.parse(from) > 370 * 86400000
+    )
       return error(400, 'INVALID_PARAMETER', '올바른 조회 기간이 필요합니다.');
     const conferences = await getConferenceViews(
       await getRepositoryUser(request),
     );
-    const events = conferences.flatMap((conference) =>
-      conference.milestones
-        .filter(
-          (milestone) =>
-            milestone.event_at.slice(0, 10) >= from &&
-            milestone.event_at.slice(0, 10) <= to,
-        )
-        .map((milestone) => ({
-          conference,
-          milestone,
-          d_day: milestone.d_day,
-          is_pinned: conference.is_pinned,
-        })),
-    );
-    return json(events);
+    return json({
+      items: conferences.filter((conference) =>
+        conference.milestones.some((milestone) =>
+          overlaps(milestone, from, to),
+        ),
+      ),
+      date_from: from,
+      date_to: to,
+      timezone: 'Asia/Seoul',
+    });
   } catch {
     return error(500, 'INTERNAL_ERROR', '캘린더 일정을 불러오지 못했습니다.');
   }

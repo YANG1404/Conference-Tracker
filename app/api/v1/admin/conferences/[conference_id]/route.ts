@@ -4,6 +4,7 @@ import {
   requireAdmin,
   updateConference,
   type ConferenceInput,
+  validateConferenceSchedules,
 } from '@/lib/conference-repository';
 import { getRepositoryUser } from '@/lib/google-auth';
 
@@ -45,6 +46,15 @@ export async function PATCH(request: Request, context: RouteContext) {
       'VALIDATION_ERROR',
       '공식 일정의 이름, 일시, 시간대는 필수입니다.',
     );
+  try {
+    validateConferenceSchedules(body);
+  } catch (cause) {
+    return error(
+      422,
+      'VALIDATION_ERROR',
+      cause instanceof Error ? cause.message : '일정 입력 오류',
+    );
+  }
   if (body.links?.some((item) => !item.label?.trim() || !item.url?.trim()))
     return error(
       422,

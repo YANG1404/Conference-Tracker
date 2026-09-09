@@ -1,3 +1,4 @@
+import { dayDifference } from './schedule-time';
 import {
   listConferences,
   listLinks,
@@ -30,6 +31,8 @@ type ConferenceView = {
     title: string | null;
     event_at: string;
     end_at: string | null;
+    source_url: string | null;
+    source_kind: string | null;
     original_timezone: string;
     time_confirmed: boolean;
     d_day: number;
@@ -46,23 +49,6 @@ function stringValue(value: unknown) {
   if (typeof value === 'number' || typeof value === 'boolean')
     return `${value}`;
   return '';
-}
-
-function calendarDayOffset(eventAt: string) {
-  const eventDate = eventAt.slice(0, 10);
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Seoul',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date());
-  const value = Object.fromEntries(
-    parts.map((part) => [part.type, part.value]),
-  );
-  const today = `${value.year}-${value.month}-${value.day}`;
-  const eventDay = Date.parse(`${eventDate}T00:00:00Z`);
-  const todayDay = Date.parse(`${today}T00:00:00Z`);
-  return Math.round((eventDay - todayDay) / 86_400_000);
 }
 
 export async function getConferenceViews(user: AuthenticatedUser | null) {
@@ -127,9 +113,14 @@ export async function getConferenceViews(user: AuthenticatedUser | null) {
         title: row.milestone_title ? stringValue(row.milestone_title) : null,
         event_at: stringValue(row.event_at),
         end_at: row.end_at ? stringValue(row.end_at) : null,
+        source_url: row.source_url ? stringValue(row.source_url) : null,
+        source_kind: row.source_kind ? stringValue(row.source_kind) : null,
         original_timezone: stringValue(row.original_timezone),
         time_confirmed: Boolean(row.time_confirmed),
-        d_day: calendarDayOffset(stringValue(row.event_at)),
+        d_day: dayDifference(
+          stringValue(row.event_at),
+          Boolean(row.time_confirmed),
+        ),
       });
     }
   }

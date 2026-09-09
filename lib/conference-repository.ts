@@ -1,3 +1,4 @@
+import { normalizeScheduleDate } from './schedule-time';
 import { env } from 'cloudflare:workers';
 
 export type AuthenticatedUser = {
@@ -13,11 +14,17 @@ export type ConferenceInput = {
   country_code: string;
   city?: string | null;
   venue?: string | null;
-  format: 'ONSITE' | 'ONLINE' | 'HYBRID';
+  format: 'ONSITE' | 'ONLINE' | 'HYBRID' | 'UNKNOWN';
   status?: 'DRAFT' | 'PUBLISHED' | 'HIDDEN';
   research_field_ids?: number[];
   primary_research_field_id?: number | null;
   milestones?: Array<{
+    id?: number;
+    end_at?: string | null;
+    source_url?: string | null;
+    source_text?: string | null;
+    source_kind?: string | null;
+    external_key?: string | null;
     group_name?: string | null;
     title: string;
     event_at: string;
@@ -53,229 +60,6 @@ export function readAuthenticatedUser(
   if (!externalUserId || !email) return null;
   return { externalUserId, email };
 }
-
-const demoMilestoneRows = [
-  [
-    1,
-    1,
-    'SUBMISSION_DEADLINE',
-    'Papers',
-    'Submission Due',
-    '2026-09-10T23:59:00Z',
-    'AoE',
-    1,
-  ],
-  [
-    2,
-    2,
-    'SUBMISSION_OPEN',
-    'Regular Papers',
-    'Submission Opens',
-    '2026-09-08T00:00:00Z',
-    'Asia/Seoul',
-    1,
-  ],
-  [
-    3,
-    3,
-    'SUBMISSION_DEADLINE',
-    'Main Track',
-    'Submission Deadline',
-    '2026-09-12T23:59:00Z',
-    'AoE',
-    1,
-  ],
-  [
-    4,
-    4,
-    'NOTIFICATION',
-    'Research Track',
-    'Author Notification',
-    '2026-09-18T17:00:00Z',
-    'UTC',
-    1,
-  ],
-  [
-    5,
-    5,
-    'REGISTRATION_DEADLINE',
-    'Authors',
-    'Author Registration Deadline',
-    '2026-09-22T23:59:00Z',
-    'AoE',
-    1,
-  ],
-  [
-    6,
-    6,
-    'CAMERA_READY_DEADLINE',
-    'Technical Papers',
-    'Final Submission Deadline',
-    '2026-09-25T23:59:00Z',
-    'AoE',
-    1,
-  ],
-  [
-    7,
-    1,
-    'REVIEWS_RELEASED',
-    'Papers',
-    'Reviews Released',
-    '2026-11-05T12:00:00Z',
-    'AoE',
-    0,
-  ],
-  [
-    8,
-    1,
-    'RESUBMISSION_DEADLINE',
-    'Papers',
-    'Resubmission Due',
-    '2026-12-03T23:59:00Z',
-    'AoE',
-    1,
-  ],
-  [
-    9,
-    1,
-    'NOTIFICATION',
-    'Papers',
-    'Notification',
-    '2026-12-17T12:00:00Z',
-    'AoE',
-    0,
-  ],
-  [
-    10,
-    1,
-    'SUBMISSION_DEADLINE',
-    'Posters',
-    'Submission Due',
-    '2027-01-21T23:59:00Z',
-    'AoE',
-    1,
-  ],
-  [
-    11,
-    1,
-    'NOTIFICATION',
-    'Posters',
-    'Notification',
-    '2027-02-18T12:00:00Z',
-    'AoE',
-    0,
-  ],
-  [
-    12,
-    1,
-    'SUBMISSION_DEADLINE',
-    'Interactive Demos',
-    'Submission Due',
-    '2027-01-21T23:59:00Z',
-    'AoE',
-    1,
-  ],
-  [
-    13,
-    1,
-    'NOTIFICATION',
-    'Interactive Demos',
-    'Notification',
-    '2027-02-18T12:00:00Z',
-    'AoE',
-    0,
-  ],
-  [
-    14,
-    1,
-    'SUBMISSION_DEADLINE',
-    'Panels',
-    'Submission Due',
-    '2026-11-19T23:59:00Z',
-    'AoE',
-    1,
-  ],
-  [
-    15,
-    1,
-    'NOTIFICATION',
-    'Panels',
-    'Notification',
-    '2027-01-14T12:00:00Z',
-    'AoE',
-    0,
-  ],
-  [
-    16,
-    1,
-    'SUBMISSION_DEADLINE',
-    'Workshops',
-    'Organizer Submission Due',
-    '2026-10-01T23:59:00Z',
-    'AoE',
-    1,
-  ],
-  [
-    17,
-    1,
-    'NOTIFICATION',
-    'Workshops',
-    'Notification',
-    '2026-11-19T12:00:00Z',
-    'AoE',
-    0,
-  ],
-  [
-    18,
-    1,
-    'WEBSITE_DEADLINE',
-    'Workshops',
-    'Accepted Workshops Websites Up',
-    '2026-12-17T12:00:00Z',
-    'AoE',
-    0,
-  ],
-  [
-    19,
-    1,
-    'SUBMISSION_DEADLINE',
-    'Meet-Ups',
-    'Submission Due',
-    '2026-10-01T23:59:00Z',
-    'AoE',
-    1,
-  ],
-  [
-    20,
-    1,
-    'NOTIFICATION',
-    'Meet-Ups',
-    'Notification',
-    '2026-11-19T12:00:00Z',
-    'AoE',
-    0,
-  ],
-  [
-    21,
-    1,
-    'SUBMISSION_DEADLINE',
-    'Student Research Competition',
-    'Submission Due',
-    '2027-01-21T23:59:00Z',
-    'AoE',
-    1,
-  ],
-  [
-    22,
-    1,
-    'NOTIFICATION',
-    'Student Research Competition',
-    'Notification',
-    '2027-02-18T12:00:00Z',
-    'AoE',
-    0,
-  ],
-] as const;
 
 const acmCcsTopLevelFields = [
   ['10002944', '일반 및 참조', 'General and reference'],
@@ -316,258 +100,7 @@ async function syncAcmCcsFields() {
   await db().batch(statements);
 }
 
-async function syncDemoMilestones() {
-  const demo = await db()
-    .prepare("SELECT id FROM conferences WHERE id = 1 AND acronym = 'CHI 2027'")
-    .first<{ id: number }>();
-  if (!demo) return;
-  const current = await db()
-    .prepare(
-      "SELECT id FROM milestones WHERE id = 22 AND conference_id = 1 AND group_name = 'Student Research Competition' AND title = 'Notification'",
-    )
-    .first<{ id: number }>();
-  if (current) return;
-  const statements = demoMilestoneRows.map((row) =>
-    db()
-      .prepare(`
-    INSERT INTO milestones (id, conference_id, type, group_name, title, event_at, original_timezone, time_confirmed)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET
-      type = excluded.type,
-      group_name = excluded.group_name,
-      title = excluded.title,
-      event_at = excluded.event_at,
-      original_timezone = excluded.original_timezone,
-      time_confirmed = excluded.time_confirmed,
-      updated_at = CURRENT_TIMESTAMP
-    WHERE milestones.conference_id = excluded.conference_id
-  `)
-      .bind(...row),
-  );
-  await db().batch(statements);
-}
-
 export async function ensureDemoData() {
-  const count = await db()
-    .prepare('SELECT COUNT(*) AS count FROM conferences')
-    .first<{ count: number }>();
-  if ((count?.count ?? 0) > 0) {
-    await Promise.all([syncDemoMilestones(), syncAcmCcsFields()]);
-    return;
-  }
-
-  const conferenceRows = [
-    [
-      1,
-      'ACM Conference on Human Factors in Computing Systems',
-      'CHI 2027',
-      2027,
-      '사람과 컴퓨팅 기술의 상호작용을 다루는 국제 학술대회입니다.',
-      'ES',
-      'Barcelona',
-      null,
-      'ONSITE',
-      'PUBLISHED',
-    ],
-    [
-      2,
-      '한국소프트웨어종합학술대회',
-      'KSC 2026',
-      2026,
-      '컴퓨팅 전 분야의 연구 성과를 공유하는 국내 종합 학술대회입니다.',
-      'KR',
-      'Jeju',
-      null,
-      'ONSITE',
-      'PUBLISHED',
-    ],
-    [
-      3,
-      'AAAI Conference on Artificial Intelligence',
-      'AAAI 2027',
-      2027,
-      '인공지능 이론과 응용 전반의 최신 연구를 다루는 국제 학술대회입니다.',
-      'CA',
-      'Vancouver',
-      null,
-      'HYBRID',
-      'PUBLISHED',
-    ],
-    [
-      4,
-      'International Conference on Software Engineering',
-      'ICSE 2027',
-      2027,
-      '소프트웨어 공학 분야의 연구와 산업 사례를 공유하는 국제 학술대회입니다.',
-      'KR',
-      'Seoul',
-      null,
-      'ONSITE',
-      'PUBLISHED',
-    ],
-    [
-      5,
-      'Conference on Neural Information Processing Systems',
-      'NeurIPS 2026',
-      2026,
-      '머신러닝과 계산 신경과학 분야의 연구를 폭넓게 다루는 학술대회입니다.',
-      'US',
-      'San Diego',
-      null,
-      'HYBRID',
-      'PUBLISHED',
-    ],
-    [
-      6,
-      'ACM Symposium on User Interface Software and Technology',
-      'UIST 2026',
-      2026,
-      '사용자 인터페이스 기술과 상호작용 기법을 다루는 국제 심포지엄입니다.',
-      'KR',
-      'Busan',
-      null,
-      'ONSITE',
-      'PUBLISHED',
-    ],
-  ];
-  const fieldRows = [
-    [1, '10002944', '일반 및 참조', 'General and reference'],
-    [2, '10010147', '컴퓨팅 방법론', 'Computing methodologies'],
-    [
-      3,
-      '10011007',
-      '소프트웨어 및 소프트웨어 공학',
-      'Software and its engineering',
-    ],
-    [4, '10003120', '인간 중심 컴퓨팅', 'Human-centered computing'],
-  ];
-  const linkRows = [
-    [1, 1, 'OFFICIAL', '공식 홈페이지', 'https://chi2027.acm.org/'],
-    [2, 1, 'SUBMISSION', '논문 제출', 'https://new.precisionconference.com/'],
-    [3, 2, 'OFFICIAL', '공식 홈페이지', 'https://www.kiise.or.kr/'],
-    [4, 3, 'OFFICIAL', '공식 홈페이지', 'https://aaai.org/'],
-    [5, 3, 'CFP', 'Call for Papers', 'https://aaai.org/conference/'],
-    [6, 4, 'OFFICIAL', '공식 홈페이지', 'https://conf.researchr.org/'],
-    [7, 5, 'OFFICIAL', '공식 홈페이지', 'https://neurips.cc/'],
-    [8, 6, 'OFFICIAL', '공식 홈페이지', 'https://uist.acm.org/'],
-  ];
-  const fieldLinks = [
-    [1, 4],
-    [2, 3],
-    [3, 2],
-    [4, 3],
-    [5, 2],
-    [6, 4],
-  ];
-  const statements: D1PreparedStatement[] = [];
-
-  for (const row of fieldRows) {
-    statements.push(
-      db()
-        .prepare(
-          'INSERT INTO research_fields (id, acm_ccs_code, name_ko, name_en, depth, is_active) VALUES (?, ?, ?, ?, 0, 1)',
-        )
-        .bind(...row),
-    );
-  }
-  for (const row of conferenceRows) {
-    statements.push(
-      db()
-        .prepare(
-          'INSERT INTO conferences (id, name, acronym, edition_year, description, country_code, city, venue, format, status, last_verified_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)',
-        )
-        .bind(...row),
-    );
-  }
-  for (const row of fieldLinks) {
-    statements.push(
-      db()
-        .prepare(
-          'INSERT INTO conference_research_fields (conference_id, research_field_id, is_primary) VALUES (?, ?, 1)',
-        )
-        .bind(...row),
-    );
-  }
-  for (const row of demoMilestoneRows) {
-    statements.push(
-      db()
-        .prepare(
-          'INSERT INTO milestones (id, conference_id, type, group_name, title, event_at, original_timezone, time_confirmed) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        )
-        .bind(...row),
-    );
-  }
-  for (const row of linkRows) {
-    statements.push(
-      db()
-        .prepare(
-          'INSERT INTO conference_links (id, conference_id, type, label, url, is_active) VALUES (?, ?, ?, ?, ?, 1)',
-        )
-        .bind(...row),
-    );
-  }
-  statements.push(
-    db().prepare(
-      "INSERT INTO source_sites (id, name, base_url, source_type, is_active, last_collected_at) VALUES (1, 'ACM Digital Library', 'https://dl.acm.org/', 'WEB_PAGE', 1, CURRENT_TIMESTAMP)",
-    ),
-  );
-  statements.push(
-    db().prepare(
-      "INSERT INTO source_sites (id, name, base_url, source_type, is_active, last_collected_at) VALUES (2, 'WikiCFP', 'http://www.wikicfp.com/', 'WEB_PAGE', 1, CURRENT_TIMESTAMP)",
-    ),
-  );
-  statements.push(
-    db().prepare(
-      "INSERT INTO collection_runs (id, source_site_id, status, started_at, finished_at, collected_count) VALUES (1, 1, 'SUCCESS', datetime('now', '-2 hours'), datetime('now', '-119 minutes'), 2)",
-    ),
-  );
-  statements.push(
-    db()
-      .prepare(
-        'INSERT INTO collection_candidates (id, collection_run_id, source_url, extracted_name, extracted_acronym, extracted_organization, extracted_country_code, extracted_city, extracted_format, raw_payload, review_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      )
-      .bind(
-        1,
-        1,
-        'https://example.org/cfp/cloud-2027',
-        'International Conference on Cloud Computing',
-        'CLOUD 2027',
-        'IEEE',
-        'JP',
-        'Tokyo',
-        'HYBRID',
-        JSON.stringify({
-          deadline: '2026-10-14T23:59:00Z',
-          timezone: 'AoE',
-          category: 'Cloud computing',
-        }),
-        'PENDING',
-      ),
-  );
-  statements.push(
-    db()
-      .prepare(
-        'INSERT INTO collection_candidates (id, collection_run_id, source_url, extracted_name, extracted_acronym, extracted_organization, extracted_country_code, extracted_city, extracted_format, raw_payload, review_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      )
-      .bind(
-        2,
-        1,
-        'https://example.org/cfp/data-2027',
-        'Korea Data Engineering Conference',
-        'KDEC 2027',
-        '한국정보과학회',
-        'KR',
-        'Daejeon',
-        'ONSITE',
-        JSON.stringify({
-          deadline: '2026-11-02T14:59:00Z',
-          timezone: 'Asia/Seoul',
-          category: 'Data management',
-        }),
-        'PENDING',
-      ),
-  );
-  await db().batch(statements);
   await syncAcmCcsFields();
 }
 
@@ -606,7 +139,7 @@ export async function listConferences() {
   const result = await db()
     .prepare(`
     SELECT c.*, m.id AS milestone_id, m.type AS milestone_type, m.group_name AS milestone_group_name, m.title AS milestone_title,
-      m.event_at, m.end_at, m.original_timezone, m.time_confirmed,
+      m.event_at, m.end_at, m.original_timezone, m.time_confirmed, m.source_url, m.source_kind,
       rf.id AS field_id, rf.name_ko AS field_name_ko, rf.name_en AS field_name_en,
       crf.is_primary
     FROM conferences c
@@ -727,13 +260,20 @@ export async function createConference(
       input.city ?? null,
       input.venue ?? null,
       input.format,
-      input.status ?? 'DRAFT',
+      'DRAFT',
       current.id,
     )
     .first<Record<string, unknown>>();
   if (!result) throw new Error('학회 생성에 실패했습니다.');
-  await replaceConferenceRelations(Number(result.id), input);
-  return { kind: 'ok' as const, conference: result };
+  await replaceConferenceRelations(Number(result.id), input, [
+    db()
+      .prepare('UPDATE conferences SET status=? WHERE id=?')
+      .bind(input.status || 'DRAFT', result.id),
+  ]);
+  return {
+    kind: 'ok' as const,
+    conference: await getAdminConference(Number(result.id)),
+  };
 }
 
 async function replaceConferenceRelations(
@@ -742,8 +282,10 @@ async function replaceConferenceRelations(
     ConferenceInput,
     'research_field_ids' | 'primary_research_field_id' | 'milestones' | 'links'
   >,
+  prefix: D1PreparedStatement[] = [],
 ) {
   const statements: D1PreparedStatement[] = [
+    ...prefix,
     db()
       .prepare('DELETE FROM conference_research_fields WHERE conference_id = ?')
       .bind(conferenceId),
@@ -768,13 +310,38 @@ async function replaceConferenceRelations(
         ),
     );
   }
+  const ids = (input.milestones ?? []).flatMap((m) => (m.id ? [m.id] : []));
+  const existingIds = new Set(
+    (
+      await db()
+        .prepare('SELECT id FROM milestones WHERE conference_id=?')
+        .bind(conferenceId)
+        .all<{ id: number }>()
+    ).results.map((m) => m.id),
+  );
+  if (
+    ids.some((id) => !existingIds.has(id)) ||
+    new Set(ids).size !== ids.length
+  )
+    throw new Error('일정 ID를 확인하세요.');
+  statements.push(
+    db()
+      .prepare(
+        'DELETE FROM milestones WHERE conference_id=?' +
+          (ids.length
+            ? ' AND id NOT IN (' + ids.map(() => '?').join(',') + ')'
+            : ''),
+      )
+      .bind(conferenceId, ...ids),
+  );
   for (const milestone of input.milestones ?? []) {
     statements.push(
       db()
         .prepare(
-          "INSERT INTO milestones (conference_id, type, group_name, title, event_at, original_timezone, time_confirmed, note) VALUES (?, 'OFFICIAL_DATE', ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO milestones (id, conference_id, type, group_name, title, event_at, original_timezone, time_confirmed, note, end_at, source_url, source_text, source_kind, external_key) VALUES (?, ?, 'OFFICIAL_DATE', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET group_name=excluded.group_name,title=excluded.title,event_at=excluded.event_at,original_timezone=excluded.original_timezone,time_confirmed=excluded.time_confirmed,note=excluded.note,end_at=excluded.end_at,source_url=excluded.source_url,source_text=excluded.source_text,source_kind=excluded.source_kind,external_key=excluded.external_key,updated_at=CURRENT_TIMESTAMP",
         )
         .bind(
+          milestone.id ?? null,
           conferenceId,
           milestone.group_name?.trim() || null,
           milestone.title.trim(),
@@ -782,6 +349,11 @@ async function replaceConferenceRelations(
           milestone.original_timezone.trim(),
           milestone.time_confirmed === false ? 0 : 1,
           milestone.note?.trim() || null,
+          milestone.end_at || null,
+          milestone.source_url || null,
+          milestone.source_text || null,
+          milestone.source_kind || 'ADMIN',
+          milestone.external_key || null,
         ),
     );
   }
@@ -819,7 +391,7 @@ export async function getAdminConference(conferenceId: number) {
       .all<Record<string, unknown>>(),
     db()
       .prepare(
-        'SELECT id, group_name, title, event_at, original_timezone, time_confirmed, note FROM milestones WHERE conference_id = ? ORDER BY event_at',
+        'SELECT id, group_name, title, event_at, end_at, original_timezone, time_confirmed, note, source_url, source_text, source_kind, external_key FROM milestones WHERE conference_id = ? ORDER BY event_at',
       )
       .bind(conferenceId)
       .all<Record<string, unknown>>(),
@@ -833,8 +405,14 @@ export async function getAdminConference(conferenceId: number) {
   return {
     ...conference,
     research_fields: fields.results,
-    milestones: milestoneRows.results,
-    links: links.results,
+    milestones: milestoneRows.results.map((row) => ({
+      ...row,
+      time_confirmed: Boolean(row.time_confirmed),
+    })),
+    links: links.results.map((row) => ({
+      ...row,
+      is_active: Boolean(row.is_active),
+    })),
   };
 }
 
@@ -851,10 +429,10 @@ export async function updateConference(
     .bind(conferenceId)
     .first<{ id: number }>();
   if (!existing) return { kind: 'not_found' as const };
-  await db()
+  const updateStatement = db()
     .prepare(`
       UPDATE conferences
-      SET series_id = (SELECT id FROM conference_series WHERE lower(acronym) = lower(?) LIMIT 1), name = ?, acronym = ?, edition_year = ?, description = ?, country_code = ?, city = ?, venue = ?, format = ?, status = ?, verified_by = ?, last_verified_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      SET series_id = COALESCE(series_id, (SELECT id FROM conference_series WHERE lower(acronym) = lower(?) LIMIT 1)), name = ?, acronym = ?, edition_year = ?, description = ?, country_code = ?, city = ?, venue = ?, format = ?, status = ?, verified_by = ?, last_verified_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `)
     .bind(
@@ -870,9 +448,8 @@ export async function updateConference(
       input.status ?? 'DRAFT',
       current.id,
       conferenceId,
-    )
-    .run();
-  await replaceConferenceRelations(conferenceId, input);
+    );
+  await replaceConferenceRelations(conferenceId, input, [updateStatement]);
   return {
     kind: 'ok' as const,
     conference: await getAdminConference(conferenceId),
@@ -981,4 +558,31 @@ export async function getAdminStats() {
     total_milestones: milestones?.count ?? 0,
     active_sources: sources?.count ?? 0,
   };
+}
+
+export function validateConferenceSchedules(input: ConferenceInput) {
+  for (const link of input.links || []) {
+    if (!['https:', 'http:'].includes(new URL(link.url).protocol))
+      throw new Error('관련 링크에는 HTTP(S) URL만 사용할 수 있습니다.');
+  }
+  if (
+    !['DRAFT', 'PUBLISHED', 'HIDDEN'].includes(input.status || 'DRAFT') ||
+    !['ONSITE', 'ONLINE', 'HYBRID', 'UNKNOWN'].includes(input.format)
+  )
+    throw new Error('공개 상태 또는 개최 방식을 확인하세요.');
+  for (const item of input.milestones || []) {
+    const timed = item.time_confirmed !== false;
+    item.event_at = normalizeScheduleDate(
+      item.event_at,
+      item.original_timezone,
+      timed,
+    );
+    item.end_at = item.end_at
+      ? normalizeScheduleDate(item.end_at, item.original_timezone, timed)
+      : null;
+    if (item.end_at && item.end_at < item.event_at)
+      throw new Error('종료 일시는 시작 일시보다 빠를 수 없습니다.');
+  }
+  if (input.status === 'PUBLISHED' && !input.milestones?.length)
+    throw new Error('공개하려면 확인된 일정이 하나 이상 필요합니다.');
 }

@@ -50,6 +50,12 @@ import {
 } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 
+import { editDate } from '@/lib/schedule-time';
+import {
+  ScheduleCollectionPanel,
+  ScheduleImportEditor,
+} from './schedule-panel';
+
 type AdminConference = {
   id: number;
   name: string;
@@ -59,7 +65,7 @@ type AdminConference = {
   country_code: string;
   city: string | null;
   venue: string | null;
-  format: 'ONSITE' | 'ONLINE' | 'HYBRID';
+  format: 'ONSITE' | 'ONLINE' | 'HYBRID' | 'UNKNOWN';
   status: 'DRAFT' | 'PUBLISHED' | 'HIDDEN';
   milestone_count: number;
   next_milestone_at: string | null;
@@ -102,7 +108,13 @@ type CatalogItem = {
   presentation_types: string | null;
   tracks: string | null;
 };
-type MilestoneDraft = {
+export type MilestoneDraft = {
+  id?: number;
+  end_at?: string | null;
+  source_url?: string;
+  source_text?: string;
+  source_kind?: string;
+  external_key?: string;
   group_name: string;
   title: string;
   event_at: string;
@@ -124,7 +136,7 @@ type ConferenceDraft = {
   country_code: string;
   city: string;
   venue: string;
-  format: 'ONSITE' | 'ONLINE' | 'HYBRID';
+  format: 'ONSITE' | 'ONLINE' | 'HYBRID' | 'UNKNOWN';
   status: 'DRAFT' | 'PUBLISHED' | 'HIDDEN';
   research_field_ids: number[];
   primary_research_field_id: number | null;
@@ -149,9 +161,6 @@ const emptyConference = (): ConferenceDraft => ({
   links: [],
 });
 
-function dateTimeLocal(value: unknown) {
-  return typeof value === 'string' ? value.slice(0, 16) : '';
-}
 function dDay(value: string | null) {
   if (!value) return '일정 없음';
   const target = Date.parse(value.slice(0, 10));
@@ -290,7 +299,18 @@ export function AdminWorkspace({ userName }: { userName: string }) {
         null,
       milestones: detail.milestones.map((item) => ({
         ...item,
-        event_at: dateTimeLocal(item.event_at),
+        event_at: editDate(
+          item.event_at,
+          item.original_timezone,
+          Boolean(item.time_confirmed),
+        ),
+        end_at: item.end_at
+          ? editDate(
+              item.end_at,
+              item.original_timezone,
+              Boolean(item.time_confirmed),
+            )
+          : null,
         time_confirmed: Boolean(item.time_confirmed),
       })),
       links: detail.links.map((item) => ({
@@ -326,7 +346,7 @@ export function AdminWorkspace({ userName }: { userName: string }) {
       country_code: conferenceDraft.country_code.toUpperCase(),
       milestones: conferenceDraft.milestones.map((item) => ({
         ...item,
-        event_at: `${item.event_at}:00Z`,
+        event_at: item.event_at,
       })),
     };
     const response = await fetch(
@@ -342,10 +362,11 @@ export function AdminWorkspace({ userName }: { userName: string }) {
     setSaving(false);
     if (!response.ok) {
       const data = (await response.json().catch(() => null)) as {
+        message?: string;
         error?: { message?: string };
       } | null;
       return setErrorMessage(
-        data?.error?.message ?? '학회 저장에 실패했습니다.',
+        data?.message ?? data?.error?.message ?? '학회 저장에 실패했습니다.',
       );
     }
     const wasEditing = Boolean(conferenceDraft.id);
@@ -544,6 +565,9 @@ export function AdminWorkspace({ userName }: { userName: string }) {
               <TabsTrigger value="catalog" className="px-4">
                 기준 카탈로그
               </TabsTrigger>
+              <TabsTrigger value="schedule-collection">
+                일정 자동 수집
+              </TabsTrigger>
             </TabsList>
             <Button
               className="w-fit bg-[#F7C85C] font-bold text-[#40320E] hover:bg-[#E8B642]"
@@ -553,6 +577,9 @@ export function AdminWorkspace({ userName }: { userName: string }) {
             </Button>
           </div>
 
+          <TabsContent value="schedule-collection" className="mt-4">
+            <ScheduleCollectionPanel onChanged={load} />
+          </TabsContent>
           <TabsContent value="conferences" className="mt-4">
             <div className="mb-3 grid gap-2 rounded-2xl border border-[#2F6B3F]/10 bg-white p-3 shadow-sm sm:grid-cols-[1fr_190px]">
               <Input
@@ -924,6 +951,9 @@ export function AdminWorkspace({ userName }: { userName: string }) {
                           )
                         }
                       >
+                        <NativeSelectOption value="UNKNOWN">
+                          미확인
+                        </NativeSelectOption>
                         <NativeSelectOption value="ONSITE">
                           오프라인
                         </NativeSelectOption>
@@ -1012,6 +1042,13 @@ export function AdminWorkspace({ userName }: { userName: string }) {
                   </div>
                 </EditorSection>
 
+                {conferenceDraft.id && (
+                  <ScheduleImportEditor
+                    conferenceId={conferenceDraft.id}
+                    milestones={conferenceDraft.milestones}
+                    onChange={(items) => updateDraft('milestones', items)}
+                  />
+                )}
                 <EditorSection icon={CalendarDays} title="공식 일정">
                   <p className="mb-3 text-sm text-[#748078]">
                     학회가 사용하는 구분명과 일정명을 그대로 입력합니다. 예:
@@ -1054,7 +1091,8 @@ export function AdminWorkspace({ userName }: { userName: string }) {
                         />
                         <Input
                           required
-                          type="datetime-local"
+                          type={item.time_confirmed ? 'datetime-local' : 'date'}
+                          aria-label="시작 일시"
                           value={item.event_at}
                           onChange={(event) =>
                             updateDraft(
@@ -1083,8 +1121,76 @@ export function AdminWorkspace({ userName }: { userName: string }) {
                               ),
                             )
                           }
-                          placeholder="AoE / UTC"
+                          placeholder="AoE / Asia/Seoul"
                         />
+                        <div className="lg:col-span-full flex flex-wrap gap-3 items-center text-xs">
+                          <label className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={item.time_confirmed}
+                              onChange={(e) =>
+                                updateDraft(
+                                  'milestones',
+                                  conferenceDraft.milestones.map((row, i) =>
+                                    i === index
+                                      ? {
+                                          ...row,
+                                          time_confirmed: e.target.checked,
+                                          event_at: e.target.checked
+                                            ? row.event_at.slice(0, 10) +
+                                              'T00:00'
+                                            : row.event_at.slice(0, 10),
+                                          end_at: null,
+                                        }
+                                      : row,
+                                  ),
+                                )
+                              }
+                            />
+                            시각이 공식적으로 명시됨
+                          </label>
+                          <label htmlFor={`end-date-${index}`}>
+                            종료 일시(선택){' '}
+                            <Input
+                              id={`end-date-${index}`}
+                              type={
+                                item.time_confirmed ? 'datetime-local' : 'date'
+                              }
+                              value={item.end_at || ''}
+                              onChange={(e) =>
+                                updateDraft(
+                                  'milestones',
+                                  conferenceDraft.milestones.map((row, i) =>
+                                    i === index
+                                      ? {
+                                          ...row,
+                                          end_at: e.target.value || null,
+                                        }
+                                      : row,
+                                  ),
+                                )
+                              }
+                            />
+                          </label>
+                          {item.source_url && (
+                            <a
+                              href={item.source_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="underline text-[#2F6B3F]"
+                            >
+                              원본 근거 ({item.source_kind})
+                            </a>
+                          )}
+                          {item.source_text && (
+                            <details className="w-full">
+                              <summary>추출 근거 보기</summary>
+                              <p className="whitespace-pre-wrap p-2">
+                                {item.source_text}
+                              </p>
+                            </details>
+                          )}
+                        </div>
                         <Button
                           type="button"
                           size="icon"
