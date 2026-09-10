@@ -227,7 +227,6 @@ export function GET() {
             milestones: { type: 'array', items: ref('Milestone') },
             links: { type: 'array', items: { type: 'object' } },
             is_pinned: { type: 'boolean' },
-            is_domestic: { type: 'boolean' },
             d_day: { type: ['integer', 'null'] },
           },
         },

@@ -80,9 +80,6 @@ paths:
       description: research_field_ids는 하나라도 일치하면 포함하는 OR 조건입니다.
       parameters:
         - $ref: '#/components/parameters/SearchQuery'
-        - name: region
-          in: query
-          schema: { $ref: '#/components/schemas/RegionFilter' }
         - name: format
           in: query
           schema: { $ref: '#/components/schemas/ConferenceFormat' }
@@ -630,9 +627,6 @@ components:
     ConferenceStatus:
       type: string
       enum: [DRAFT, PUBLISHED, HIDDEN]
-    RegionFilter:
-      type: string
-      enum: [DOMESTIC, OVERSEAS]
     SourceType:
       type: string
       enum: [API, RSS, WEB_PAGE]
@@ -698,7 +692,6 @@ components:
         - research_fields
         - milestones
         - links
-        - is_domestic
         - is_pinned
       properties:
         id: { type: integer }
@@ -721,7 +714,6 @@ components:
         links:
           type: array
           items: { $ref: '#/components/schemas/ConferenceLink' }
-        is_domestic: { type: boolean }
         is_pinned: { type: boolean }
         d_day: { type: [integer, 'null'] }
         next_milestone:
@@ -1002,4 +994,3 @@ components:
       properties:
         id: { oneOf: [{ type: integer }, { type: string, const: CCF }] }
         ok: { type: boolean }
-

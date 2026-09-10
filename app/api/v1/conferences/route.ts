@@ -10,7 +10,6 @@ export async function GET(request: Request) {
       ? { externalUserId: session.externalUserId, email: session.email }
       : null;
     const q = (url.searchParams.get('q') ?? '').trim().toLowerCase();
-    const region = url.searchParams.get('region');
     const format = url.searchParams.get('format');
     const fieldIds = (url.searchParams.get('research_field_ids') ?? '')
       .split(',')
@@ -30,9 +29,6 @@ export async function GET(request: Request) {
         !q ||
         item.name.toLowerCase().includes(q) ||
         (item.acronym ?? '').toLowerCase().includes(q);
-      const matchesRegion =
-        !region ||
-        (region === 'DOMESTIC' ? item.is_domestic : !item.is_domestic);
       const matchesFormat = !format || item.format === format;
       const matchesField =
         fieldIds.length === 0 ||
@@ -40,7 +36,6 @@ export async function GET(request: Request) {
       const matchesPinned = !pinnedOnly || item.is_pinned;
       return (
         matchesQuery &&
-        matchesRegion &&
         matchesFormat &&
         matchesField &&
         matchesPinned

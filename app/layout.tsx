@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: 'Conference Tracker',
-  description: '컴퓨팅 분야의 국내외 학회 일정을 한눈에 확인하고 관리하세요.',
+  description: '컴퓨터과학 분야의 주요 국제학회 일정을 한눈에 확인하세요.',
 };
 
 export default function RootLayout({

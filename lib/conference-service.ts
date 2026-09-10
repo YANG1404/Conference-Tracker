@@ -38,7 +38,6 @@ type ConferenceView = {
     d_day: number;
   }>;
   links: Array<Record<string, unknown>>;
-  is_domestic: boolean;
   is_pinned: boolean;
   d_day: number | null;
   next_milestone: ConferenceView['milestones'][number] | null;
@@ -80,7 +79,6 @@ export async function getConferenceViews(user: AuthenticatedUser | null) {
         research_fields: [],
         milestones: [],
         links: [],
-        is_domestic: stringValue(row.country_code) === 'KR',
         is_pinned: pinnedIds.has(id),
         d_day: null,
         next_milestone: null,

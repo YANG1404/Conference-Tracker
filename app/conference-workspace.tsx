@@ -85,7 +85,6 @@ type Conference = {
   name: string;
   category: string;
   categories: string[];
-  region: '국내' | '해외' | '미확인';
   format: '온라인' | '오프라인' | '하이브리드' | '미확인';
   location: string;
   description: string;
@@ -116,7 +115,6 @@ type ApiConference = {
   country_code: string;
   city: string | null;
   format: 'ONSITE' | 'ONLINE' | 'HYBRID' | 'UNKNOWN';
-  is_domestic: boolean;
   research_fields: Array<{ name_ko: string }>;
   milestones: ApiMilestone[];
   links: Array<{ label: string; url: string }>;
@@ -285,7 +283,6 @@ export function ConferenceWorkspace({
   }
   const [query, setQuery] = useState('');
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
-  const [region, setRegion] = useState('전체 지역');
   const [format, setFormat] = useState('전체 방식');
   const [pinnedOnly, setPinnedOnly] = useState(false);
   const [pinnedIds, setPinnedIds] = useState<number[]>([]);
@@ -312,15 +309,12 @@ export function ConferenceWorkspace({
         conference.categories.some((category) =>
           selectedCategories.includes(category),
         );
-      const matchesRegion =
-        region === '전체 지역' || conference.region === region;
       const matchesFormat =
         format === '전체 방식' || conference.format === format;
       const matchesPinned = !pinnedOnly || pinnedIds.includes(conference.id);
       return (
         matchesQuery &&
         matchesCategory &&
-        matchesRegion &&
         matchesFormat &&
         matchesPinned
       );
@@ -328,7 +322,6 @@ export function ConferenceWorkspace({
   }, [
     query,
     selectedCategories,
-    region,
     format,
     pinnedOnly,
     pinnedIds,
@@ -417,12 +410,6 @@ export function ConferenceWorkspace({
               name: item.name,
               category: categoryName,
               categories: item.research_fields.map((field) => field.name_ko),
-              region:
-                item.country_code === 'ZZ'
-                  ? '미확인'
-                  : item.is_domestic
-                    ? '국내'
-                    : '해외',
               format:
                 item.format === 'UNKNOWN'
                   ? '미확인'
@@ -586,7 +573,6 @@ export function ConferenceWorkspace({
   const resetFilters = () => {
     setQuery('');
     setSelectedCategories([]);
-    setRegion('전체 지역');
     setFormat('전체 방식');
     setPinnedOnly(false);
   };
@@ -612,7 +598,7 @@ export function ConferenceWorkspace({
                 Conference Tracker
               </p>
               <p className="text-xs text-[#607064]">
-                Computing conference calendar
+                Major CS conference calendar
               </p>
             </div>
           </div>
@@ -774,11 +760,11 @@ export function ConferenceWorkspace({
                   </span>
                 </div>
                 <h1 className="text-2xl font-black tracking-[-0.035em] text-[#183E28] sm:text-3xl">
-                  학회 일정을 한눈에 관리하세요
+                  주요 CS 국제학회 일정을 한눈에
                 </h1>
                 <p className="mt-2 text-sm leading-6 text-[#68746B] sm:text-base">
-                  학회가 발표한 공식 일정명을 기준으로 중요한 날짜를 확인할 수
-                  있습니다.
+                  컴퓨터과학 분야의 주요 국제학회가 발표한 공식 일정을
+                  확인할 수 있습니다.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -957,18 +943,6 @@ export function ConferenceWorkspace({
                   </Popover>
                   <NativeSelect
                     className="w-full sm:w-auto"
-                    value={region}
-                    onChange={(event) => setRegion(event.target.value)}
-                    aria-label="지역"
-                  >
-                    <NativeSelectOption value="전체 지역">
-                      국내 + 해외
-                    </NativeSelectOption>
-                    <NativeSelectOption value="국내">국내</NativeSelectOption>
-                    <NativeSelectOption value="해외">해외</NativeSelectOption>
-                  </NativeSelect>
-                  <NativeSelect
-                    className="w-full sm:w-auto"
                     value={format}
                     onChange={(event) => setFormat(event.target.value)}
                     aria-label="개최 방식"
@@ -1006,7 +980,6 @@ export function ConferenceWorkspace({
                 </span>
                 {(query ||
                   selectedCategories.length > 0 ||
-                  region !== '전체 지역' ||
                   format !== '전체 방식' ||
                   pinnedOnly) && (
                   <Button variant="ghost" size="sm" onClick={resetFilters}>
