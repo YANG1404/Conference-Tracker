@@ -67,11 +67,13 @@
 - 공개 학회는 `status='PUBLISHED'`이며 최소 한 개의 확인 가능한 일정이 있어야 한다.
 - 관리자가 `HIDDEN`으로 설정한 학회는 자동 수집이 다시 공개하지 않는다.
 - `conference_series.catalog_key`는 DBLP Key를 기반으로 한 정규화 키이며 중복될 수 없다.
+- `conferences(series_id, edition_year)`는 UNIQUE로 같은 학회 시리즈의 동일 연도 회차가 중복 생성되지 않도록 한다. `series_id` 없이 직접 등록한 회차는 SQLite의 NULL UNIQUE 규칙에 따라 복수 저장할 수 있다.
 - CSV 원본 행은 `conference_catalog_entries.source_row`로 유일하게 식별한다.
 - `pins`는 복합 PK로 같은 사용자가 같은 학회를 중복 저장하지 못하게 한다.
 - 사용자와 학회의 대표 분야는 선택된 분야 중 하나여야 하며 애플리케이션 계층에서 최대 하나만 허용한다.
 - `conference_links`는 같은 학회에서 동일한 유형과 URL이 중복되지 않는다.
 - 일정 종료 시각은 시작 시각보다 빠를 수 없다.
+- 외부에서 수집한 일정은 `milestones(conference_id, source_kind, external_key)` UNIQUE 제약으로 동일 소스의 중복 적재를 방지한다. 수동 일정처럼 `external_key`가 NULL인 행은 복수 저장할 수 있다.
 - `source_text`는 LLM이 반환한 설명이 아니라 실제 원문에서 확인된 근거만 저장한다.
 - 같은 학회·같은 의미·같은 날짜의 일정은 공식/관리자 일정이 CCF 일반 일정보다 우선한다.
 
@@ -79,6 +81,7 @@
 
 - 사용자 삭제 시 세션, 관심 분야와 핀은 CASCADE 삭제한다.
 - 학회 회차 삭제 시 분야 관계, 일정, 링크, 기관 관계, 출처, 피드를 CASCADE 삭제한다.
+- 관계의 삭제·수정 정책은 DBML 하단의 명시적 `Ref` 정의에 표기한다. `milestones.created_at`과 `schedule_feeds.id` 사이에는 관계가 없다.
 - 기준 카탈로그에서 사라진 원본 행과 시리즈는 물리 삭제 대신 `is_active=0`으로 비활성화한다.
 - 운영에서는 학회 물리 삭제보다 `HIDDEN` 상태를 우선 사용한다.
 
@@ -99,3 +102,18 @@
 
 기존 초안의 `collection_candidates`와 승인·반려 중심 검수 흐름은 현재 서비스 정책에서 제외한다. 외부 사용자로부터 신규 학회 요청을 받지 않으며, 검증된 자동 수집 결과를 먼저 공개한 뒤 관리자가 사후 보정한다. 기존 배포 DB에 호환 목적으로 테이블이 남아 있을 수 있으나 신규 논리 모델과 DBML에는 포함하지 않는다.
 
+## 8. SQLite 보강 제약
+
+DBML은 조건부 UNIQUE 인덱스를 직접 표현하지 못하므로, 다음 제약은 Cloudflare D1 마이그레이션에서 관리한다.
+
+```sql
+CREATE UNIQUE INDEX uq_user_primary_field
+ON user_research_fields(user_id)
+WHERE is_primary = 1;
+
+CREATE UNIQUE INDEX uq_conference_primary_field
+ON conference_research_fields(conference_id)
+WHERE is_primary = 1;
+```
+
+위 인덱스는 사용자와 학회별 대표 분야를 최대 하나로 제한한다. DBML에서는 해당 `is_primary` 컬럼의 note로 실행 제약을 연결한다.

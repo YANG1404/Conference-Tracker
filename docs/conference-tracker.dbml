@@ -48,7 +48,7 @@ Table users {
 
 Table user_sessions {
   token text [pk, note: 'HttpOnly cookie token']
-  user_id integer [not null, ref: > users.id]
+  user_id integer [not null]
   expires_at text [not null]
   created_at text [not null, default: `CURRENT_TIMESTAMP`]
 
@@ -59,7 +59,7 @@ Table user_sessions {
 
 Table research_fields {
   id integer [pk, increment]
-  parent_id integer [ref: > research_fields.id]
+  parent_id integer
   acm_ccs_code text [not null, unique]
   name_ko text [not null]
   name_en text [not null]
@@ -68,9 +68,9 @@ Table research_fields {
 }
 
 Table user_research_fields {
-  user_id integer [not null, ref: > users.id]
-  research_field_id integer [not null, ref: > research_fields.id]
-  is_primary integer [not null, default: 0, note: 'boolean; user당 최대 하나를 애플리케이션에서 보장']
+  user_id integer [not null]
+  research_field_id integer [not null]
+  is_primary integer [not null, default: 0, note: 'boolean; SQLite partial UNIQUE index uq_user_primary_field로 user당 최대 하나를 보장']
 
   indexes {
     (user_id, research_field_id) [pk]
@@ -96,7 +96,7 @@ Table conference_series {
 
 Table conference_catalog_entries {
   id integer [pk, increment]
-  series_id integer [ref: > conference_series.id]
+  series_id integer
   source_row integer [not null, unique]
   acronym text [not null]
   canonical_acronym text [not null]
@@ -133,7 +133,7 @@ Table catalog_sync_state {
 
 Table conferences {
   id integer [pk, increment]
-  series_id integer [ref: > conference_series.id]
+  series_id integer
   name text [not null]
   acronym text
   edition_year integer
@@ -144,21 +144,21 @@ Table conferences {
   format conference_format [not null]
   status conference_status [not null, default: 'DRAFT']
   last_verified_at text
-  verified_by integer [ref: > users.id]
+  verified_by integer
   created_at text [not null, default: `CURRENT_TIMESTAMP`]
   updated_at text [not null, default: `CURRENT_TIMESTAMP`]
 
   indexes {
-    (series_id, edition_year) [name: 'idx_conferences_series_year']
+    (series_id, edition_year) [unique, name: 'uq_conferences_series_year', note: '동일 학회 시리즈의 같은 연도 회차 중복 방지']
     (name, edition_year) [name: 'idx_conferences_name_year']
     (status, country_code) [name: 'idx_conferences_status_country']
   }
 }
 
 Table conference_research_fields {
-  conference_id integer [not null, ref: > conferences.id]
-  research_field_id integer [not null, ref: > research_fields.id]
-  is_primary integer [not null, default: 0, note: 'boolean; conference당 최대 하나를 애플리케이션에서 보장']
+  conference_id integer [not null]
+  research_field_id integer [not null]
+  is_primary integer [not null, default: 0, note: 'boolean; SQLite partial UNIQUE index uq_conference_primary_field로 conference당 최대 하나를 보장']
 
   indexes {
     (conference_id, research_field_id) [pk]
@@ -168,7 +168,7 @@ Table conference_research_fields {
 
 Table milestones {
   id integer [pk, increment]
-  conference_id integer [not null, ref: > conferences.id]
+  conference_id integer [not null]
   type text [not null, note: '현재 OFFICIAL_DATE']
   group_name text [note: 'Papers, Workshops 등 공식 구분명']
   title text
@@ -187,12 +187,13 @@ Table milestones {
   indexes {
     (conference_id, type) [name: 'idx_milestones_conference_type']
     event_at [name: 'idx_milestones_calendar']
+    (conference_id, source_kind, external_key) [unique, name: 'uq_milestones_external_key', note: '외부 소스의 동일 일정 중복 방지; external_key NULL은 복수 허용']
   }
 }
 
 Table conference_links {
   id integer [pk, increment]
-  conference_id integer [not null, ref: > conferences.id]
+  conference_id integer [not null]
   type text [not null, note: 'HOMEPAGE, SUBMISSION, REGISTRATION, OTHER']
   label text [not null]
   url text [not null]
@@ -206,8 +207,8 @@ Table conference_links {
 }
 
 Table pins {
-  user_id integer [not null, ref: > users.id]
-  conference_id integer [not null, ref: > conferences.id]
+  user_id integer [not null]
+  conference_id integer [not null]
   created_at text [not null, default: `CURRENT_TIMESTAMP`]
 
   indexes {
@@ -227,8 +228,8 @@ Table organizations {
 }
 
 Table conference_organizations {
-  conference_id integer [not null, ref: > conferences.id]
-  organization_id integer [not null, ref: > organizations.id]
+  conference_id integer [not null]
+  organization_id integer [not null]
   role_name text [not null, default: 'HOST']
 
   indexes {
@@ -249,8 +250,8 @@ Table source_sites {
 
 Table conference_sources {
   id integer [pk, increment]
-  conference_id integer [not null, ref: > conferences.id]
-  source_site_id integer [ref: > source_sites.id]
+  conference_id integer [not null]
+  source_site_id integer
   source_url text [not null]
   is_primary integer [not null, default: 0, note: 'boolean']
   verified_at text
@@ -263,7 +264,7 @@ Table conference_sources {
 Table schedule_feeds {
   id integer [pk, increment]
   source_key text [not null, unique]
-  conference_id integer [ref: > conferences.id]
+  conference_id integer
   kind text [not null, note: 'CCF_INDEX, CCF, OFFICIAL']
   url text [not null]
   enabled integer [not null, default: 0, note: 'boolean']
@@ -280,3 +281,24 @@ Table schedule_feeds {
     (enabled, next_check_at) [name: 'idx_schedule_feeds_due']
   }
 }
+
+// 관계를 명시적으로 정의해 dbdiagram의 오류 연결선을 방지한다.
+// 사용자·학회의 종속 데이터는 부모 삭제 시 함께 삭제한다.
+Ref: user_sessions.user_id > users.id [delete: cascade, update: no action]
+Ref: research_fields.parent_id > research_fields.id [delete: no action, update: no action]
+Ref: user_research_fields.user_id > users.id [delete: cascade, update: no action]
+Ref: user_research_fields.research_field_id > research_fields.id [delete: no action, update: no action]
+Ref: conference_catalog_entries.series_id > conference_series.id [delete: no action, update: no action]
+Ref: conferences.series_id > conference_series.id [delete: no action, update: no action]
+Ref: conferences.verified_by > users.id [delete: set null, update: no action]
+Ref: conference_research_fields.conference_id > conferences.id [delete: cascade, update: no action]
+Ref: conference_research_fields.research_field_id > research_fields.id [delete: no action, update: no action]
+Ref: milestones.conference_id > conferences.id [delete: cascade, update: no action]
+Ref: conference_links.conference_id > conferences.id [delete: cascade, update: no action]
+Ref: pins.user_id > users.id [delete: cascade, update: no action]
+Ref: pins.conference_id > conferences.id [delete: cascade, update: no action]
+Ref: conference_organizations.conference_id > conferences.id [delete: cascade, update: no action]
+Ref: conference_organizations.organization_id > organizations.id [delete: no action, update: no action]
+Ref: conference_sources.conference_id > conferences.id [delete: cascade, update: no action]
+Ref: conference_sources.source_site_id > source_sites.id [delete: no action, update: no action]
+Ref: schedule_feeds.conference_id > conferences.id [delete: cascade, update: no action]
