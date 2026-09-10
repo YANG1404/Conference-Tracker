@@ -1,0 +1,282 @@
+Project conference_tracker {
+  database_type: 'SQLite / Cloudflare D1'
+  Note: 'Conference Tracker active target model - 2026-09-10'
+}
+
+Enum user_role {
+  MEMBER
+  ADMIN
+}
+
+Enum user_status {
+  ACTIVE
+  INACTIVE
+  LOCKED
+}
+
+Enum conference_format {
+  ONSITE
+  ONLINE
+  HYBRID
+  UNKNOWN
+}
+
+Enum conference_status {
+  DRAFT
+  PUBLISHED
+  HIDDEN
+}
+
+Enum source_type {
+  API
+  RSS
+  WEB_PAGE
+}
+
+Table users {
+  id integer [pk, increment]
+  external_user_id text [not null, unique, note: 'google:{sub}']
+  email text [not null, unique]
+  display_name text
+  profile_image_url text
+  auth_provider text [note: 'GOOGLE']
+  role user_role [not null, default: 'MEMBER']
+  status user_status [not null, default: 'ACTIVE']
+  created_at text [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at text [not null, default: `CURRENT_TIMESTAMP`]
+}
+
+Table user_sessions {
+  token text [pk, note: 'HttpOnly cookie token']
+  user_id integer [not null, ref: > users.id]
+  expires_at text [not null]
+  created_at text [not null, default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    (user_id, expires_at) [name: 'idx_user_sessions_user']
+  }
+}
+
+Table research_fields {
+  id integer [pk, increment]
+  parent_id integer [ref: > research_fields.id]
+  acm_ccs_code text [not null, unique]
+  name_ko text [not null]
+  name_en text [not null]
+  depth integer [not null, default: 0]
+  is_active integer [not null, default: 1, note: 'boolean']
+}
+
+Table user_research_fields {
+  user_id integer [not null, ref: > users.id]
+  research_field_id integer [not null, ref: > research_fields.id]
+  is_primary integer [not null, default: 0, note: 'boolean; user당 최대 하나를 애플리케이션에서 보장']
+
+  indexes {
+    (user_id, research_field_id) [pk]
+    research_field_id [name: 'idx_user_research_fields_field']
+  }
+}
+
+Table conference_series {
+  id integer [pk, increment]
+  catalog_key text [not null, unique, note: 'DBLP 기반 정규화 키']
+  acronym text [not null]
+  name text [not null]
+  dblp_key text [not null]
+  is_active integer [not null, default: 1, note: 'boolean']
+  created_at text [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at text [not null, default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    acronym [name: 'idx_conference_series_acronym']
+    dblp_key [name: 'idx_conference_series_dblp']
+  }
+}
+
+Table conference_catalog_entries {
+  id integer [pk, increment]
+  series_id integer [ref: > conference_series.id]
+  source_row integer [not null, unique]
+  acronym text [not null]
+  canonical_acronym text [not null]
+  name text [not null]
+  dblp_key text [not null]
+  ksi_grade text
+  bk21_if text
+  kaist_recognized integer [not null, default: 0, note: 'boolean']
+  snu_recognized integer [not null, default: 0, note: 'boolean']
+  postech_grade text
+  normalized_score text
+  track_name text
+  presentation_type text [note: 'oral, poster, spotlight 등']
+  source_url text [not null]
+  raw_row text [not null]
+  is_active integer [not null, default: 1, note: 'boolean']
+  synced_at text [not null, default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    canonical_acronym [name: 'idx_conference_catalog_canonical']
+    dblp_key [name: 'idx_conference_catalog_dblp']
+    series_id [name: 'idx_conference_catalog_series']
+  }
+}
+
+Table catalog_sync_state {
+  id integer [pk, note: 'singleton row id=1']
+  source_url text [not null]
+  status text [not null, note: 'RUNNING, SUCCEEDED, FAILED']
+  row_count integer [not null, default: 0]
+  last_synced_at text
+  error_message text
+}
+
+Table conferences {
+  id integer [pk, increment]
+  series_id integer [ref: > conference_series.id]
+  name text [not null]
+  acronym text
+  edition_year integer
+  description text
+  country_code text [not null, note: 'ISO 3166-1 alpha-2; ZZ=unknown']
+  city text
+  venue text
+  format conference_format [not null]
+  status conference_status [not null, default: 'DRAFT']
+  last_verified_at text
+  verified_by integer [ref: > users.id]
+  created_at text [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at text [not null, default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    (series_id, edition_year) [name: 'idx_conferences_series_year']
+    (name, edition_year) [name: 'idx_conferences_name_year']
+    (status, country_code) [name: 'idx_conferences_status_country']
+  }
+}
+
+Table conference_research_fields {
+  conference_id integer [not null, ref: > conferences.id]
+  research_field_id integer [not null, ref: > research_fields.id]
+  is_primary integer [not null, default: 0, note: 'boolean; conference당 최대 하나를 애플리케이션에서 보장']
+
+  indexes {
+    (conference_id, research_field_id) [pk]
+    research_field_id [name: 'idx_conference_field_filter']
+  }
+}
+
+Table milestones {
+  id integer [pk, increment]
+  conference_id integer [not null, ref: > conferences.id]
+  type text [not null, note: '현재 OFFICIAL_DATE']
+  group_name text [note: 'Papers, Workshops 등 공식 구분명']
+  title text
+  event_at text [not null, note: 'UTC ISO 8601 또는 YYYY-MM-DD']
+  end_at text
+  original_timezone text [not null, note: 'AoE, Asia/Seoul, UNSPECIFIED 등']
+  time_confirmed integer [not null, default: 1, note: 'boolean']
+  note text
+  source_url text
+  source_text text [note: '원문 근거 발췌']
+  source_kind text [note: 'CCF, OFFICIAL_GEMINI, ADMIN']
+  external_key text [note: '외부 일정 중복 방지 키']
+  created_at text [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at text [not null, default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    (conference_id, type) [name: 'idx_milestones_conference_type']
+    event_at [name: 'idx_milestones_calendar']
+  }
+}
+
+Table conference_links {
+  id integer [pk, increment]
+  conference_id integer [not null, ref: > conferences.id]
+  type text [not null, note: 'HOMEPAGE, SUBMISSION, REGISTRATION, OTHER']
+  label text [not null]
+  url text [not null]
+  is_active integer [not null, default: 1, note: 'boolean']
+  created_at text [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at text [not null, default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    (conference_id, type, url) [unique, name: 'uq_conference_links_type_url']
+  }
+}
+
+Table pins {
+  user_id integer [not null, ref: > users.id]
+  conference_id integer [not null, ref: > conferences.id]
+  created_at text [not null, default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    (user_id, conference_id) [pk]
+    (user_id, created_at) [name: 'idx_pins_user_created']
+  }
+}
+
+Table organizations {
+  id integer [pk, increment]
+  name text [not null, unique]
+  acronym text
+  country_code text
+  website_url text
+  created_at text [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at text [not null, default: `CURRENT_TIMESTAMP`]
+}
+
+Table conference_organizations {
+  conference_id integer [not null, ref: > conferences.id]
+  organization_id integer [not null, ref: > organizations.id]
+  role_name text [not null, default: 'HOST']
+
+  indexes {
+    (conference_id, organization_id, role_name) [pk]
+  }
+}
+
+Table source_sites {
+  id integer [pk, increment]
+  name text [not null]
+  base_url text [not null, unique]
+  source_type source_type [not null]
+  is_active integer [not null, default: 1, note: 'boolean']
+  last_collected_at text
+  created_at text [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at text [not null, default: `CURRENT_TIMESTAMP`]
+}
+
+Table conference_sources {
+  id integer [pk, increment]
+  conference_id integer [not null, ref: > conferences.id]
+  source_site_id integer [ref: > source_sites.id]
+  source_url text [not null]
+  is_primary integer [not null, default: 0, note: 'boolean']
+  verified_at text
+
+  indexes {
+    (conference_id, source_url) [unique, name: 'uq_conference_sources_url']
+  }
+}
+
+Table schedule_feeds {
+  id integer [pk, increment]
+  source_key text [not null, unique]
+  conference_id integer [ref: > conferences.id]
+  kind text [not null, note: 'CCF_INDEX, CCF, OFFICIAL']
+  url text [not null]
+  enabled integer [not null, default: 0, note: 'boolean']
+  payload text [note: '검증된 최신 수집 snapshot JSON']
+  content_hash text
+  last_checked_at text
+  last_success_at text
+  next_check_at text
+  lease_until text
+  status text [not null, default: 'IDLE']
+  error_message text
+
+  indexes {
+    (enabled, next_check_at) [name: 'idx_schedule_feeds_due']
+  }
+}
