@@ -687,18 +687,6 @@ export function ConferenceWorkspace({
                   >
                     <UserRound className="text-[#2F6B3F]" /> 내 정보
                   </DropdownMenuItem>
-                  <DropdownMenuItem
-                    render={
-                      <button
-                        type="button"
-                        aria-label="관심 학회 목록 열기"
-                        onClick={() => window.location.assign('/me#interests')}
-                      />
-                    }
-                    className="px-2.5 py-2.5 font-semibold text-[#294432] focus:bg-[#7FB77E]/15"
-                  >
-                    <Bookmark className="text-[#2F6B3F]" /> 관심 학회
-                  </DropdownMenuItem>
                 </>
               )}
               {isAdmin && (
