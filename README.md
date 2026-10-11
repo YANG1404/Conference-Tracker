@@ -1,6 +1,7 @@
 # Conference Tracker
 
 컴퓨터과학 분야의 주요 국제학술대회 일정을 자동으로 수집하고, 통합 캘린더를 통해 조회·관리할 수 있는 웹서비스입니다.
+[링크](https://conference-tracker.sgy5134.chatgpt.site/)
 
 ## 1. 프로젝트 개요
 
